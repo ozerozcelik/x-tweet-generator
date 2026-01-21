@@ -360,7 +360,8 @@ with tab1:
                         include_cta=include_cta,
                         include_emoji=include_emoji,
                         custom_instructions=custom_instructions,
-                        language=language
+                        language=language,
+                        profile=manual_profile
                     )
 
                 st.success("Tweet üretildi!")

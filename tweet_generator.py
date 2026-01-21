@@ -1283,7 +1283,8 @@ Karmaşıklaştırmayı bırakın.""",
         include_cta: bool = True,
         include_emoji: bool = True,
         custom_instructions: str = "",
-        language: str = "tr"
+        language: str = "tr",
+        profile: XProfile = None
     ) -> str:
         """
         Claude AI ile yaratıcı tweet üretir.
@@ -1297,6 +1298,7 @@ Karmaşıklaştırmayı bırakın.""",
             include_emoji: Emoji kullanılsın mı
             custom_instructions: Özel talimatlar
             language: Dil kodu (tr, en, de, fr, es, ar, zh, ja, ko, pt, ru)
+            profile: X profil bilgisi (takipçi, verified, hesap yaşı)
 
         Returns:
             Üretilen tweet
@@ -1321,6 +1323,67 @@ Karmaşıklaştırmayı bırakın.""",
 
         lang_info = language_config.get(language, language_config["tr"])
         lang_instruction = lang_info["instruction"]
+
+        # Profil bazlı strateji
+        profile_strategy = ""
+        if profile:
+            followers = profile.followers_count
+            is_verified = profile.verified
+
+            if followers < 1000:
+                profile_strategy = """
+👤 PROFİL: BÜYÜME AŞAMASI (< 1K takipçi)
+STRATEJİ:
+- Viral potansiyeli YÜKSEK içerik üret (paylaşılabilir, relatable)
+- Soru sor, tartışma başlat → Reply ve RT al
+- Trending konulara değin → Keşfet'e düş
+- Niche topluluklara hitap et → Sadık takipçi kazan
+- Hook çok güçlü olmalı → Scroll durdur
+- Kişisel hikaye ve deneyim paylaş → Bağ kur
+- "Follow için sebep ver" mantığı → Değer sun
+"""
+            elif followers < 10000:
+                profile_strategy = """
+👤 PROFİL: GELİŞME AŞAMASI (1K-10K takipçi)
+STRATEJİ:
+- Tutarlı içerik üret → Marka oluştur
+- Thread formatı kullan → Derin değer sun
+- Engagement'ı koru → Mevcut kitleyi kaybetme
+- Niche'te otorite ol → Spesifik konularda derinleş
+- Diğer hesaplarla etkileşim → Networking
+- Quote tweet ile görüş bildir → Görünürlük
+"""
+            elif followers < 100000:
+                profile_strategy = """
+👤 PROFİL: MİD-TİER (10K-100K takipçi)
+STRATEJİ:
+- Otoriter ve güvenilir ton kullan
+- Değer odaklı içerik → Kaliteyi koru
+- Kendi görüşlerini cesurca paylaş
+- Trend belirleyici ol, takip etme
+- Thread ve uzun içerik → Dwell time
+- Tartışmalı konularda pozisyon al
+"""
+            else:
+                profile_strategy = """
+👤 PROFİL: BÜYÜK HESAP (100K+ takipçi)
+STRATEJİ:
+- Otorite ve liderlik tonu
+- Orijinal düşünce ve içgörü sun
+- Kısa, vurucu mesajlar da işe yarar (zaten görünürlüğün var)
+- Topluluk oluştur, kitleyi yönlendir
+- Marka değerini koru, tartışmalı konularda dikkatli ol
+- Diğer büyük hesaplarla etkileşim
+"""
+
+            if is_verified:
+                profile_strategy += """
+✓ VERİFİED AVANTAJI:
+- TweetCred +100 boost → Daha geniş dağıtım
+- Duplicate content'te %30 muafiyet
+- Daha cesur ve tartışmalı olabilirsin
+- Otorite sinyali güçlü
+"""
 
         length_guide = {
             "short": "100-200 karakter",
@@ -1354,7 +1417,7 @@ KONU: {topic}
 STİL: {style} - {style_guide.get(style, style)}
 TON: {tone} - {tone_guide.get(tone, tone)}
 UZUNLUK: {length_guide.get(length, length)}
-
+{profile_strategy}
 ═══════════════════════════════════════════
 X ALGORİTMASI - KRİTİK BİLGİLER
 ═══════════════════════════════════════════
