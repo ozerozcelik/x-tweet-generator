@@ -14,9 +14,15 @@ import random
 import os
 import urllib.request
 import urllib.error
+import ssl
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 from enum import Enum
+
+# SSL context for HTTPS requests (ignore certificate errors)
+SSL_CONTEXT = ssl.create_default_context()
+SSL_CONTEXT.check_hostname = False
+SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
 # Claude API için
 try:
@@ -510,13 +516,15 @@ class TweetScraper:
     Nitter instance'ları veya alternatif yöntemler kullanır.
     """
 
-    # Çalışan Nitter instance'ları (güncel tutulmalı)
+    # Çalışan Nitter instance'ları (Ocak 2025 güncel)
     NITTER_INSTANCES = [
-        "nitter.privacydev.net",
         "nitter.poast.org",
+        "nitter.net",
+        "nitter.cz",
+        "nitter.kavin.rocks",
+        "nitter.privacydev.net",
         "nitter.woodland.cafe",
-        "nitter.esmailelbob.xyz",
-        "nitter.1d4.us",
+        "nitter.unixfox.eu",
     ]
 
     def __init__(self):
@@ -533,11 +541,12 @@ class TweetScraper:
             try:
                 url = f"https://{instance}/"
                 req = urllib.request.Request(url, headers=self.headers)
-                with urllib.request.urlopen(req, timeout=5) as response:
+                with urllib.request.urlopen(req, timeout=8, context=SSL_CONTEXT) as response:
                     if response.status == 200:
                         self.working_instance = instance
                         return instance
-            except:
+            except Exception as e:
+                print(f"Instance {instance} failed: {e}")
                 continue
         return None
 
@@ -563,7 +572,7 @@ class TweetScraper:
             url = f"https://{self.working_instance}/{username}"
             req = urllib.request.Request(url, headers=self.headers)
 
-            with urllib.request.urlopen(req, timeout=15) as response:
+            with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
                 html = response.read().decode('utf-8')
 
             # Basit HTML parsing (BeautifulSoup olmadan)
@@ -608,7 +617,7 @@ class TweetScraper:
             url = f"https://{self.working_instance}/{username}/rss"
             req = urllib.request.Request(url, headers=self.headers)
 
-            with urllib.request.urlopen(req, timeout=15) as response:
+            with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
                 xml = response.read().decode('utf-8')
 
             # Basit RSS parsing
