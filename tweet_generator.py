@@ -955,7 +955,7 @@ Karmaşıklaştırmayı bırakın.""",
             "raw": "Ham, dürüst, filtresiz"
         }
 
-        prompt = f"""Sen bir X (Twitter) içerik uzmanısın. X algoritmasını iyi biliyorsun.
+        prompt = f"""Sen bir X (Twitter) içerik uzmanısın. X'in açık kaynak algoritmasını (github.com/xai-org/x-algorithm) derinlemesine biliyorsun.
 
 GÖREV: Aşağıdaki kriterlere göre viral potansiyeli yüksek bir tweet yaz.
 
@@ -965,14 +965,49 @@ STİL: {style} - {style_guide.get(style, style)}
 TON: {tone} - {tone_guide.get(tone, tone)}
 UZUNLUK: {length_guide.get(length, length)}
 
-X ALGORİTMASI İÇİN OPTİMİZASYON:
-- Satır araları kullan (okunabilirlik için)
-- İlk cümle dikkat çekici olmalı (hook)
-- Duygusal bağ kur
-- Özgün ve cesur ol
-- Klişelerden kaçın
-{"- Sonunda call to action ekle (soru sor veya aksiyon iste)" if include_cta else ""}
-{"- Uygun yerlerde emoji kullan (abartma)" if include_emoji else "- Emoji kullanma"}
+═══════════════════════════════════════════
+X ALGORİTMASI - KRİTİK BİLGİLER
+═══════════════════════════════════════════
+
+ENGAGEMENT AĞIRLIKLARI (yüksekten düşüğe):
+1. Reply (yanıt) → EN YÜKSEK değer (+1.5x)
+2. Repost/Retweet → Yüksek değer (+2.0x)
+3. Quote Tweet → Çok yüksek (+2.5x)
+4. Bookmark → Kalite sinyali (+0.5x)
+5. Like → Temel sinyal (+1.0x)
+
+NEGATİF SİNYALLER (KESİNLİKLE KAÇIN):
+- Dış link → Algoritma CEZALANDIRIR (-30% reach)
+- 3+ hashtag → Spam gibi görünür (-20%)
+- "Follow for follow", "like4like" → Spam tespiti (-50%)
+- Tamamı büyük harf → Agresif görünüm (-15%)
+
+POZİTİF SİNYALLER (MUTLAKA KULLAN):
+- Satır araları → Okunabilirlik, dwell time artırır (+10%)
+- Soru sormak → Reply tetikler (+30%)
+- Call to action → Etkileşim teşviki (+20%)
+- Thread formatı (🧵) → Yüksek engagement (+35%)
+- Kişisel hikaye → Duygusal bağ (+25%)
+- Tartışmalı görüş → Engagement patlaması (+40%)
+
+DWELL TIME OPTİMİZASYONU (ÇOK ÖNEMLİ):
+Dwell time = kullanıcının tweet'te geçirdiği süre. Algoritma bunu ölçer.
+- Uzun, değerli içerik → Daha fazla okuma süresi
+- Merak uyandıran açılış → Scroll durur, okumaya devam
+- Liste/madde formatı → Taranabilir, daha uzun kalış
+- Hikaye anlatımı → Sonunu merak ettir
+- "Plot twist" veya sürpriz → Dikkat tutar
+- Paragraflar arası boşluk → Göz dinlenir, devam eder
+
+OPTİMAL TWEET YAPISI:
+1. HOOK: İlk cümle dikkat çekici (scroll durdurucu) - DWELL TIME BAŞLAR
+2. MERAK: İkinci kısım merak uyandırmalı - OKUMAYA DEVAM
+3. DEĞER: Okuyucuya somut fayda sağla - DWELL TIME UZAR
+4. FORMAT: Satır araları ile okunabilir - GÖZ YORULMAZ
+5. CTA: Sonunda aksiyon çağrısı - ETKİLEŞİM TETİKLE
+
+{"CALL TO ACTION: Sonunda soru sor veya aksiyon iste (örn: 'Ne düşünüyorsunuz?', 'Kaydet', 'Yorumda paylaş')" if include_cta else "Call to action EKLEME"}
+{"EMOJI: Uygun yerlerde 1-3 emoji kullan (abartma, spam görünür)" if include_emoji else "EMOJI KULLANMA"}
 
 {f"EK TALİMATLAR: {custom_instructions}" if custom_instructions else ""}
 
