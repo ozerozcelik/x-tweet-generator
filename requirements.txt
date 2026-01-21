@@ -1,0 +1,2 @@
+# X Algorithm Tweet Generator Requirements
+# No external dependencies required - uses only Python standard library
