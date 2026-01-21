@@ -23,6 +23,13 @@ try:
 except ImportError:
     ANTHROPIC_AVAILABLE = False
 
+# X API için
+try:
+    import tweepy
+    TWEEPY_AVAILABLE = True
+except ImportError:
+    TWEEPY_AVAILABLE = False
+
 
 class ActionType(Enum):
     """X algoritmasının tahmin ettiği 15 eylem türü"""
@@ -75,6 +82,260 @@ class TweetAnalysis:
     weaknesses: List[str]
     suggestions: List[str]
     engagement_prediction: Dict[str, float]
+    profile_boost: float = 1.0  # Profil bazlı çarpan
+
+
+@dataclass
+class XProfile:
+    """X Profil bilgileri"""
+    username: str
+    name: str
+    followers_count: int
+    following_count: int
+    tweet_count: int
+    created_at: str
+    verified: bool
+    description: str
+    profile_image_url: str = ""
+
+    @property
+    def account_age_days(self) -> int:
+        """Hesap yaşını gün olarak hesapla"""
+        from datetime import datetime
+        try:
+            created = datetime.strptime(self.created_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+            return (datetime.now() - created).days
+        except:
+            return 0
+
+    @property
+    def follower_ratio(self) -> float:
+        """Takipçi/Takip oranı"""
+        if self.following_count == 0:
+            return self.followers_count
+        return self.followers_count / self.following_count
+
+    @property
+    def engagement_tier(self) -> str:
+        """Hesap seviyesi"""
+        if self.followers_count >= 1000000:
+            return "mega"  # 1M+
+        elif self.followers_count >= 100000:
+            return "macro"  # 100K+
+        elif self.followers_count >= 10000:
+            return "mid"  # 10K+
+        elif self.followers_count >= 1000:
+            return "micro"  # 1K+
+        elif self.followers_count >= 100:
+            return "nano"  # 100+
+        else:
+            return "starter"  # <100
+
+
+class XProfileAnalyzer:
+    """X Profil analizi ve API entegrasyonu"""
+
+    # Takipçi sayısına göre engagement çarpanları
+    TIER_MULTIPLIERS = {
+        "mega": 0.5,      # 1M+ - düşük engagement rate ama yüksek reach
+        "macro": 0.7,     # 100K+
+        "mid": 1.0,       # 10K+ - optimal
+        "micro": 1.3,     # 1K+ - yüksek engagement rate
+        "nano": 1.5,      # 100+ - çok yüksek engagement
+        "starter": 0.8    # <100 - düşük reach
+    }
+
+    def __init__(self, bearer_token: Optional[str] = None):
+        """
+        Args:
+            bearer_token: X API Bearer Token
+        """
+        self.bearer_token = bearer_token or os.environ.get("X_BEARER_TOKEN")
+        self.client = None
+
+        if TWEEPY_AVAILABLE and self.bearer_token:
+            self.client = tweepy.Client(bearer_token=self.bearer_token)
+
+    def get_profile(self, username: str) -> Optional[XProfile]:
+        """
+        Kullanıcı profilini çeker.
+
+        Args:
+            username: X kullanıcı adı (@olmadan)
+
+        Returns:
+            XProfile objesi veya None
+        """
+        if not self.client:
+            return None
+
+        try:
+            user = self.client.get_user(
+                username=username,
+                user_fields=[
+                    "created_at", "description", "public_metrics",
+                    "profile_image_url", "verified"
+                ]
+            )
+
+            if user.data:
+                return XProfile(
+                    username=user.data.username,
+                    name=user.data.name,
+                    followers_count=user.data.public_metrics["followers_count"],
+                    following_count=user.data.public_metrics["following_count"],
+                    tweet_count=user.data.public_metrics["tweet_count"],
+                    created_at=str(user.data.created_at),
+                    verified=getattr(user.data, 'verified', False),
+                    description=user.data.description or "",
+                    profile_image_url=user.data.profile_image_url or ""
+                )
+        except Exception as e:
+            print(f"Profil çekme hatası: {e}")
+
+        return None
+
+    def analyze_profile(self, profile: XProfile) -> Dict:
+        """
+        Profili analiz eder ve engagement faktörleri hesaplar.
+
+        Args:
+            profile: XProfile objesi
+
+        Returns:
+            Analiz sonuçları
+        """
+        analysis = {
+            "tier": profile.engagement_tier,
+            "tier_multiplier": self.TIER_MULTIPLIERS[profile.engagement_tier],
+            "strengths": [],
+            "weaknesses": [],
+            "suggestions": [],
+            "metrics": {}
+        }
+
+        # Takipçi sayısı analizi
+        if profile.followers_count >= 10000:
+            analysis["strengths"].append(f"Güçlü takipçi tabanı: {profile.followers_count:,}")
+        elif profile.followers_count < 100:
+            analysis["weaknesses"].append("Düşük takipçi sayısı - reach sınırlı")
+            analysis["suggestions"].append("Tutarlı içerik ve etkileşim ile takipçi artırın")
+
+        # Takipçi/Takip oranı
+        ratio = profile.follower_ratio
+        if ratio >= 2:
+            analysis["strengths"].append(f"Yüksek takipçi oranı: {ratio:.1f}x")
+        elif ratio < 0.5:
+            analysis["weaknesses"].append("Düşük takipçi oranı - otorite sorgulanabilir")
+
+        # Hesap yaşı
+        age_days = profile.account_age_days
+        if age_days >= 365:
+            years = age_days // 365
+            analysis["strengths"].append(f"Yerleşik hesap: {years}+ yıl")
+        elif age_days < 90:
+            analysis["weaknesses"].append("Yeni hesap - güven inşası gerekli")
+            analysis["suggestions"].append("Düzenli paylaşım yaparak güven oluşturun")
+
+        # Tweet sayısı
+        if profile.tweet_count >= 1000:
+            analysis["strengths"].append("Aktif içerik üretici")
+        elif profile.tweet_count < 50:
+            analysis["suggestions"].append("Daha fazla içerik üretin")
+
+        # Verified badge
+        if profile.verified:
+            analysis["strengths"].append("Doğrulanmış hesap ✓")
+            analysis["tier_multiplier"] *= 1.2
+
+        # Metrikleri kaydet
+        analysis["metrics"] = {
+            "followers": profile.followers_count,
+            "following": profile.following_count,
+            "tweets": profile.tweet_count,
+            "ratio": round(ratio, 2),
+            "age_days": age_days,
+            "verified": profile.verified
+        }
+
+        return analysis
+
+    def calculate_reach_prediction(self, profile: XProfile, tweet_score: float) -> Dict[str, int]:
+        """
+        Profil ve tweet skoruna göre tahmini reach hesaplar.
+
+        Args:
+            profile: XProfile objesi
+            tweet_score: Tweet analiz skoru (0-100)
+
+        Returns:
+            Tahmini reach metrikleri
+        """
+        base_reach = profile.followers_count
+
+        # Tweet skoru çarpanı
+        score_multiplier = tweet_score / 100
+
+        # Tier çarpanı (engagement rate)
+        tier_mult = self.TIER_MULTIPLIERS[profile.engagement_tier]
+
+        # Tahmini metrikler
+        impressions = int(base_reach * score_multiplier * 2)  # Takipçilerin 2x'i kadar
+        engagements = int(impressions * tier_mult * 0.05)  # %5 base engagement
+        likes = int(engagements * 0.6)
+        retweets = int(engagements * 0.15)
+        replies = int(engagements * 0.1)
+        bookmarks = int(engagements * 0.1)
+        profile_visits = int(engagements * 0.05)
+
+        return {
+            "impressions": impressions,
+            "engagements": engagements,
+            "likes": likes,
+            "retweets": retweets,
+            "replies": replies,
+            "bookmarks": bookmarks,
+            "profile_visits": profile_visits,
+            "engagement_rate": round((engagements / max(impressions, 1)) * 100, 2)
+        }
+
+    def create_manual_profile(
+        self,
+        username: str,
+        followers: int,
+        following: int = 0,
+        tweets: int = 0,
+        verified: bool = False,
+        account_age_years: float = 1
+    ) -> XProfile:
+        """
+        API olmadan manuel profil oluşturur.
+
+        Args:
+            username: Kullanıcı adı
+            followers: Takipçi sayısı
+            following: Takip sayısı
+            tweets: Tweet sayısı
+            verified: Doğrulanmış mı
+            account_age_years: Hesap yaşı (yıl)
+
+        Returns:
+            XProfile objesi
+        """
+        from datetime import datetime, timedelta
+
+        created_date = datetime.now() - timedelta(days=int(account_age_years * 365))
+
+        return XProfile(
+            username=username,
+            name=username,
+            followers_count=followers,
+            following_count=following,
+            tweet_count=tweets,
+            created_at=created_date.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+            verified=verified,
+            description=""
+        )
 
 
 @dataclass
@@ -395,11 +656,17 @@ Karmaşıklaştırmayı bırakın.""",
         "giveaway follow", "retweet to win"
     ]
 
-    def __init__(self, api_key: Optional[str] = None, is_premium: bool = True):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        is_premium: bool = True,
+        x_bearer_token: Optional[str] = None
+    ):
         """
         Args:
             api_key: Anthropic API key (opsiyonel, env'den de alınabilir)
             is_premium: X Premium kullanıcısı mı (25k karakter)
+            x_bearer_token: X API Bearer Token (profil analizi için)
         """
         self.templates = self.TEMPLATES
         self.is_premium = is_premium
@@ -410,6 +677,10 @@ Karmaşıklaştırmayı bırakın.""",
         self.client = None
         if ANTHROPIC_AVAILABLE and self.api_key:
             self.client = anthropic.Anthropic(api_key=self.api_key)
+
+        # X Profile Analyzer kurulumu
+        self.profile_analyzer = XProfileAnalyzer(bearer_token=x_bearer_token)
+        self.current_profile: Optional[XProfile] = None
 
     def analyze_tweet(self, tweet: str) -> TweetAnalysis:
         """
