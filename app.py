@@ -458,15 +458,21 @@ with tab2:
 with tab3:
     st.header("🎯 TweetCred Skoru & Shadow Hierarchy")
 
-    st.markdown("""
+    # Verified durumuna göre başlangıç skoru göster
+    base_start = -128
+    verified_bonus_val = 100 if verified else 0
+    starting_score = base_start + verified_bonus_val
+
+    st.markdown(f"""
     <div class="profile-card">
         <h4>TweetCred Nedir?</h4>
         <p>Jack Dorsey'in geliştirdiği gizli otorite ölçeği. Hesabınızın algoritmadaki "güvenilirlik puanı"dır.</p>
         <ul>
             <li>Yeni hesaplar <strong>-128</strong> ile başlar</li>
             <li>Minimum <strong>+17</strong> olmalı reach almak için</li>
-            <li>Verified hesaplar <strong>+100</strong> bonus alır</li>
+            <li>Verified hesaplar <strong>+100</strong> bonus alır → <strong>{-128} + {100} = {-28}</strong> ile başlar</li>
         </ul>
+        <p><strong>Senin başlangıç skorun:</strong> {base_start} {f'+ {verified_bonus_val} (Verified)' if verified else ''} = <strong>{starting_score}</strong></p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -502,6 +508,12 @@ with tab3:
             {score:+d}
         </div>
         """, unsafe_allow_html=True)
+
+        # Hesaplama detayı göster
+        if verified:
+            st.caption(f"📊 Hesaplama: -128 (base) + 100 (verified) + {score - (-28)} (diğer) = {score}")
+        else:
+            st.caption(f"📊 Hesaplama: -128 (base) + {score - (-128)} (diğer) = {score}")
 
         st.markdown(f"**Durum:** {status_text}")
         if tweetcred.has_cold_start_suppression:
