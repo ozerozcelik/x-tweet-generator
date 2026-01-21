@@ -1431,10 +1431,19 @@ OPTİMAL TWEET YAPISI:
 
 Sadece tweet metnini yaz, başka açıklama ekleme."""
 
+        # Uzunluğa göre max_tokens ayarla
+        max_tokens_map = {
+            "short": 1000,
+            "medium": 2000,
+            "long": 4000,
+            "epic": 8000  # 4000 karakter için ~8000 token gerekebilir
+        }
+        tokens = max_tokens_map.get(length, 2000)
+
         try:
             message = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=2000,
+                max_tokens=tokens,
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
@@ -1555,10 +1564,19 @@ KURALLAR:
 
 Sadece yeni tweet'i yaz."""
 
+        # Orijinal içerik uzunluğuna göre max_tokens ayarla
+        original_len = len(original)
+        if original_len > 2000:
+            tokens = 8000
+        elif original_len > 1000:
+            tokens = 4000
+        else:
+            tokens = 2000
+
         try:
             message = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=1000,
+                max_tokens=tokens,
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
