@@ -12,6 +12,8 @@ import re
 import json
 import random
 import os
+import urllib.request
+import urllib.error
 from dataclasses import dataclass
 from typing import List, Dict, Optional
 from enum import Enum
@@ -500,6 +502,166 @@ class TweetCredAnalyzer:
             tips.append("Plot twist/karşıtlık ekle - merak uyandırır")
 
         return tips
+
+
+class TweetScraper:
+    """
+    API gerektirmeden tweet çekme.
+    Nitter instance'ları veya alternatif yöntemler kullanır.
+    """
+
+    # Çalışan Nitter instance'ları (güncel tutulmalı)
+    NITTER_INSTANCES = [
+        "nitter.privacydev.net",
+        "nitter.poast.org",
+        "nitter.woodland.cafe",
+        "nitter.esmailelbob.xyz",
+        "nitter.1d4.us",
+    ]
+
+    def __init__(self):
+        self.working_instance = None
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+        }
+
+    def _find_working_instance(self) -> Optional[str]:
+        """Çalışan bir Nitter instance'ı bul"""
+        for instance in self.NITTER_INSTANCES:
+            try:
+                url = f"https://{instance}/"
+                req = urllib.request.Request(url, headers=self.headers)
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    if response.status == 200:
+                        self.working_instance = instance
+                        return instance
+            except:
+                continue
+        return None
+
+    def fetch_tweets_nitter(self, username: str, count: int = 50) -> List[Dict]:
+        """
+        Nitter üzerinden tweet çek.
+
+        Args:
+            username: X kullanıcı adı (@ olmadan)
+            count: Çekilecek tweet sayısı
+
+        Returns:
+            Tweet listesi
+        """
+        if not self.working_instance:
+            self._find_working_instance()
+
+        if not self.working_instance:
+            return []
+
+        tweets = []
+        try:
+            url = f"https://{self.working_instance}/{username}"
+            req = urllib.request.Request(url, headers=self.headers)
+
+            with urllib.request.urlopen(req, timeout=15) as response:
+                html = response.read().decode('utf-8')
+
+            # Basit HTML parsing (BeautifulSoup olmadan)
+            # Tweet içeriklerini bul
+            tweet_pattern = r'<div class="tweet-content[^"]*"[^>]*>(.*?)</div>'
+            matches = re.findall(tweet_pattern, html, re.DOTALL)
+
+            for match in matches[:count]:
+                # HTML tag'lerini temizle
+                text = re.sub(r'<[^>]+>', '', match)
+                text = text.strip()
+
+                if text and len(text) > 10:
+                    tweets.append({
+                        "text": text,
+                        "likes": 0,  # Nitter'dan engagement almak zor
+                        "retweets": 0,
+                        "replies": 0,
+                        "impressions": 100
+                    })
+
+            # Stats'ları da çekmeye çalış
+            stat_pattern = r'<span class="tweet-stat[^"]*"[^>]*>.*?(\d+)</span>'
+
+        except Exception as e:
+            print(f"Nitter fetch error: {e}")
+
+        return tweets
+
+    def fetch_tweets_rss(self, username: str, count: int = 50) -> List[Dict]:
+        """
+        RSS feed üzerinden tweet çek (Nitter RSS).
+        """
+        if not self.working_instance:
+            self._find_working_instance()
+
+        if not self.working_instance:
+            return []
+
+        tweets = []
+        try:
+            url = f"https://{self.working_instance}/{username}/rss"
+            req = urllib.request.Request(url, headers=self.headers)
+
+            with urllib.request.urlopen(req, timeout=15) as response:
+                xml = response.read().decode('utf-8')
+
+            # Basit RSS parsing
+            # <title> ve <description> tag'lerini bul
+            item_pattern = r'<item>(.*?)</item>'
+            items = re.findall(item_pattern, xml, re.DOTALL)
+
+            for item in items[:count]:
+                # Description içindeki tweet metnini al
+                desc_match = re.search(r'<description>(.*?)</description>', item, re.DOTALL)
+                if desc_match:
+                    text = desc_match.group(1)
+                    # CDATA ve HTML temizle
+                    text = re.sub(r'<!\[CDATA\[', '', text)
+                    text = re.sub(r'\]\]>', '', text)
+                    text = re.sub(r'<[^>]+>', '', text)
+                    text = text.strip()
+
+                    if text and len(text) > 10:
+                        tweets.append({
+                            "text": text,
+                            "likes": 0,
+                            "retweets": 0,
+                            "replies": 0,
+                            "impressions": 100
+                        })
+
+        except Exception as e:
+            print(f"RSS fetch error: {e}")
+
+        return tweets
+
+    def fetch_tweets(self, username: str, count: int = 50) -> List[Dict]:
+        """
+        Tweet çek - önce RSS dene, sonra HTML scraping.
+        """
+        # Önce RSS dene (daha güvenilir)
+        tweets = self.fetch_tweets_rss(username, count)
+
+        if not tweets:
+            # RSS başarısızsa HTML scraping dene
+            tweets = self.fetch_tweets_nitter(username, count)
+
+        return tweets
+
+    def get_status(self) -> Dict:
+        """Scraper durumunu döndür"""
+        instance = self._find_working_instance()
+        return {
+            "working": instance is not None,
+            "instance": instance,
+            "method": "Nitter (RSS/HTML)"
+        }
 
 
 @dataclass

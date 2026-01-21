@@ -8,7 +8,7 @@ import os
 import json
 from pathlib import Path
 from dotenv import load_dotenv
-from tweet_generator import XAlgorithmTweetGenerator, XProfileAnalyzer, TweetCredAnalyzer, TweetStyleAnalyzer
+from tweet_generator import XAlgorithmTweetGenerator, XProfileAnalyzer, TweetCredAnalyzer, TweetStyleAnalyzer, TweetScraper
 
 # .env dosyasını yükle
 load_dotenv()
@@ -78,6 +78,13 @@ st.markdown("""
         padding: 1rem;
         border-radius: 10px;
         border: 1px solid #dee2e6;
+        color: #333333 !important;
+    }
+    .profile-card h4, .profile-card p, .profile-card li, .profile-card strong {
+        color: #333333 !important;
+    }
+    .profile-card a {
+        color: #1DA1F2 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -582,8 +589,8 @@ with tab3:
                 st.warning("Lütfen tweet girin.")
 
     else:  # X Username ile Çek
-        st.subheader("🐦 X Username ile Tweet Çekme")
-        st.warning("⚠️ Bu özellik X API Bearer Token gerektirir ve sadece public tweetleri çekebilir.")
+        st.subheader("🐦 X Username ile Tweet Çekme (API Gerektirmez)")
+        st.info("✨ Nitter üzerinden ücretsiz tweet çekme - API key gerekmez!")
 
         x_username = st.text_input(
             "X Username:",
@@ -591,57 +598,54 @@ with tab3:
             key="x_username_input"
         )
 
-        x_bearer = st.text_input(
-            "X API Bearer Token:",
-            type="password",
-            help="developer.twitter.com'dan alabilirsiniz",
-            key="x_bearer_input"
-        )
+        tweet_count = st.slider("Çekilecek Tweet Sayısı", 10, 50, 30)
 
-        tweet_count = st.slider("Çekilecek Tweet Sayısı", 10, 100, 50)
+        # Scraper durumunu kontrol et
+        scraper = TweetScraper()
 
-        if st.button("🔄 Tweetleri Çek", type="primary", key="fetch_tweets_btn"):
-            if x_username and x_bearer:
-                with st.spinner(f"@{x_username} tweetleri çekiliyor..."):
-                    try:
-                        import tweepy
-                        client = tweepy.Client(bearer_token=x_bearer)
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔍 Bağlantıyı Test Et", key="test_scraper_btn"):
+                with st.spinner("Nitter bağlantısı test ediliyor..."):
+                    status = scraper.get_status()
+                    if status["working"]:
+                        st.success(f"✅ Bağlantı OK: {status['instance']}")
+                    else:
+                        st.error("❌ Hiçbir Nitter instance'ı çalışmıyor. Manuel yapıştırma kullanın.")
 
-                        # Kullanıcı ID'sini al
-                        user = client.get_user(username=x_username)
-                        if user.data:
-                            user_id = user.data.id
+        with col2:
+            if st.button("🔄 Tweetleri Çek", type="primary", key="fetch_tweets_btn"):
+                if x_username:
+                    with st.spinner(f"@{x_username} tweetleri çekiliyor..."):
+                        tweets = scraper.fetch_tweets(x_username, tweet_count)
 
-                            # Tweetleri çek
-                            tweets_response = client.get_users_tweets(
-                                id=user_id,
-                                max_results=min(tweet_count, 100),
-                                tweet_fields=["public_metrics", "created_at"]
-                            )
+                        if tweets:
+                            st.session_state.user_tweets = tweets
+                            st.session_state.style_analysis = style_analyzer.analyze_tweets(tweets)
+                            st.success(f"✅ {len(tweets)} tweet çekildi ve analiz edildi!")
 
-                            if tweets_response.data:
-                                tweets = []
-                                for tweet in tweets_response.data:
-                                    metrics = tweet.public_metrics or {}
-                                    tweets.append({
-                                        "text": tweet.text,
-                                        "likes": metrics.get("like_count", 0),
-                                        "retweets": metrics.get("retweet_count", 0),
-                                        "replies": metrics.get("reply_count", 0),
-                                        "impressions": metrics.get("impression_count", metrics.get("like_count", 0) * 20)
-                                    })
-
-                                st.session_state.user_tweets = tweets
-                                st.session_state.style_analysis = style_analyzer.analyze_tweets(tweets)
-                                st.success(f"✅ {len(tweets)} tweet çekildi ve analiz edildi!")
-                            else:
-                                st.error("Tweet bulunamadı.")
+                            # Çekilen tweetleri göster
+                            with st.expander("📜 Çekilen Tweetler", expanded=False):
+                                for i, t in enumerate(tweets[:10], 1):
+                                    st.text(f"{i}. {t['text'][:100]}...")
                         else:
-                            st.error("Kullanıcı bulunamadı.")
-                    except Exception as e:
-                        st.error(f"Hata: {str(e)}")
-            else:
-                st.warning("Username ve Bearer Token gerekli.")
+                            st.error("""
+                            Tweet çekilemedi. Olası sebepler:
+                            - Nitter instance'ları geçici olarak kapalı
+                            - Kullanıcı adı hatalı
+                            - Hesap private
+
+                            **Alternatif:** Manuel yapıştırma kullanın.
+                            """)
+                else:
+                    st.warning("Lütfen username girin.")
+
+        st.markdown("---")
+        st.caption("""
+        **Not:** Bu özellik Nitter (Twitter'ın açık kaynak aynası) kullanır.
+        Engagement verileri (like, RT) bu yöntemle alınamaz.
+        Daha detaylı analiz için manuel yapıştırma tercih edin.
+        """)
 
     # Analiz sonuçlarını göster
     if st.session_state.style_analysis:
