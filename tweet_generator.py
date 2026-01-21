@@ -502,6 +502,224 @@ class TweetCredAnalyzer:
         return tips
 
 
+@dataclass
+class TweetStyleAnalysis:
+    """Kullanıcının tweet stil analizi"""
+    avg_length: float = 0
+    avg_line_breaks: float = 0
+    emoji_frequency: float = 0  # emoji per tweet
+    question_frequency: float = 0  # soru işareti kullanan tweet oranı
+    hashtag_frequency: float = 0
+    mention_frequency: float = 0
+    link_frequency: float = 0
+    common_words: List[str] = None
+    common_emojis: List[str] = None
+    tone: str = "neutral"  # professional, casual, provocative, educational
+    topics: List[str] = None
+    best_performing_patterns: List[str] = None
+    avg_engagement_rate: float = 0
+    posting_hours: List[int] = None  # en aktif saatler
+
+    def __post_init__(self):
+        if self.common_words is None:
+            self.common_words = []
+        if self.common_emojis is None:
+            self.common_emojis = []
+        if self.topics is None:
+            self.topics = []
+        if self.best_performing_patterns is None:
+            self.best_performing_patterns = []
+        if self.posting_hours is None:
+            self.posting_hours = []
+
+
+class TweetStyleAnalyzer:
+    """Kullanıcının tweetlerini analiz edip stil çıkarır"""
+
+    EMOJI_PATTERN = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F1E0-\U0001F1FF"  # flags
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
+        "]+", flags=re.UNICODE
+    )
+
+    def analyze_tweets(self, tweets: List[Dict]) -> TweetStyleAnalysis:
+        """
+        Tweet listesini analiz edip stil çıkarır.
+
+        Args:
+            tweets: Tweet listesi [{"text": "...", "likes": 10, "retweets": 5, "replies": 2, "impressions": 1000}, ...]
+
+        Returns:
+            TweetStyleAnalysis objesi
+        """
+        if not tweets:
+            return TweetStyleAnalysis()
+
+        analysis = TweetStyleAnalysis()
+
+        total_length = 0
+        total_line_breaks = 0
+        total_emojis = 0
+        total_questions = 0
+        total_hashtags = 0
+        total_mentions = 0
+        total_links = 0
+        all_emojis = []
+        all_words = []
+        engagement_rates = []
+
+        for tweet in tweets:
+            text = tweet.get("text", "")
+
+            # Uzunluk
+            total_length += len(text)
+
+            # Satır araları
+            total_line_breaks += text.count('\n')
+
+            # Emojiler
+            emojis = self.EMOJI_PATTERN.findall(text)
+            total_emojis += len(emojis)
+            all_emojis.extend(emojis)
+
+            # Soru işareti
+            if '?' in text:
+                total_questions += 1
+
+            # Hashtag
+            hashtags = re.findall(r'#\w+', text)
+            total_hashtags += len(hashtags)
+
+            # Mention
+            mentions = re.findall(r'@\w+', text)
+            total_mentions += len(mentions)
+
+            # Link
+            if 'http' in text or 't.co' in text:
+                total_links += 1
+
+            # Kelimeler (stopword'ler hariç)
+            words = re.findall(r'\b[a-zA-ZğüşıöçĞÜŞİÖÇ]{4,}\b', text.lower())
+            all_words.extend(words)
+
+            # Engagement rate
+            impressions = tweet.get("impressions", 0)
+            if impressions > 0:
+                likes = tweet.get("likes", 0)
+                retweets = tweet.get("retweets", 0)
+                replies = tweet.get("replies", 0)
+                engagement = (likes + retweets * 2 + replies * 1.5) / impressions
+                engagement_rates.append(engagement)
+
+        n = len(tweets)
+
+        analysis.avg_length = total_length / n
+        analysis.avg_line_breaks = total_line_breaks / n
+        analysis.emoji_frequency = total_emojis / n
+        analysis.question_frequency = total_questions / n
+        analysis.hashtag_frequency = total_hashtags / n
+        analysis.mention_frequency = total_mentions / n
+        analysis.link_frequency = total_links / n
+
+        # En sık kullanılan emojiler
+        if all_emojis:
+            emoji_counts = {}
+            for e in all_emojis:
+                emoji_counts[e] = emoji_counts.get(e, 0) + 1
+            analysis.common_emojis = sorted(emoji_counts.keys(), key=lambda x: emoji_counts[x], reverse=True)[:5]
+
+        # En sık kullanılan kelimeler (stopword'ler hariç)
+        stopwords = {'için', 'olan', 'gibi', 'daha', 'çok', 'kadar', 'nasıl', 'neden', 'this', 'that', 'with', 'from', 'have', 'been', 'will', 'your', 'they', 'what', 'when', 'there'}
+        filtered_words = [w for w in all_words if w not in stopwords]
+        if filtered_words:
+            word_counts = {}
+            for w in filtered_words:
+                word_counts[w] = word_counts.get(w, 0) + 1
+            analysis.common_words = sorted(word_counts.keys(), key=lambda x: word_counts[x], reverse=True)[:10]
+
+        # Ortalama engagement
+        if engagement_rates:
+            analysis.avg_engagement_rate = sum(engagement_rates) / len(engagement_rates)
+
+        # Ton tahmini
+        analysis.tone = self._detect_tone(tweets)
+
+        return analysis
+
+    def _detect_tone(self, tweets: List[Dict]) -> str:
+        """Tweet'lerden ton tespit et"""
+        texts = " ".join([t.get("text", "") for t in tweets]).lower()
+
+        provocative_words = ['tartışmalı', 'yanlış', 'hata', 'aslında', 'unpopular', 'controversial', 'wrong', 'mistake']
+        educational_words = ['öğrendim', 'ipucu', 'rehber', 'nasıl', 'adım', 'learned', 'tips', 'guide', 'how to', 'step']
+        casual_words = ['haha', 'lol', 'sjsj', 'random', 'wtf', 'omg']
+        professional_words = ['analiz', 'strateji', 'veri', 'rapor', 'analysis', 'strategy', 'data', 'report']
+
+        scores = {
+            'provocative': sum(1 for w in provocative_words if w in texts),
+            'educational': sum(1 for w in educational_words if w in texts),
+            'casual': sum(1 for w in casual_words if w in texts),
+            'professional': sum(1 for w in professional_words if w in texts)
+        }
+
+        if max(scores.values()) == 0:
+            return "neutral"
+        return max(scores, key=scores.get)
+
+    def generate_style_prompt(self, analysis: TweetStyleAnalysis) -> str:
+        """Stil analizinden AI prompt'u oluştur"""
+        prompt_parts = []
+
+        prompt_parts.append("BU KULLANICININ STİLİNE UYGUN TWEET YAZMALSIN:")
+
+        # Uzunluk
+        if analysis.avg_length < 100:
+            prompt_parts.append("- Kısa ve öz tweetler tercih ediyor")
+        elif analysis.avg_length < 300:
+            prompt_parts.append("- Orta uzunlukta tweetler yazıyor")
+        else:
+            prompt_parts.append("- Uzun, detaylı tweetler yazıyor")
+
+        # Satır araları
+        if analysis.avg_line_breaks >= 2:
+            prompt_parts.append("- Satır araları kullanıyor (okunabilirlik için)")
+        else:
+            prompt_parts.append("- Genellikle tek paragraf yazıyor")
+
+        # Emoji
+        if analysis.emoji_frequency >= 2:
+            prompt_parts.append(f"- Emoji seven biri: {' '.join(analysis.common_emojis[:3]) if analysis.common_emojis else '🔥'}")
+        elif analysis.emoji_frequency >= 0.5:
+            prompt_parts.append("- Ara sıra emoji kullanıyor")
+        else:
+            prompt_parts.append("- Emoji kullanmıyor veya çok az")
+
+        # Soru
+        if analysis.question_frequency >= 0.3:
+            prompt_parts.append("- Sıklıkla soru soruyor (etkileşim odaklı)")
+
+        # Ton
+        tone_desc = {
+            'provocative': "- Provokatif ve tartışmacı ton",
+            'educational': "- Eğitici ve bilgi paylaşan ton",
+            'casual': "- Rahat ve eğlenceli ton",
+            'professional': "- Profesyonel ve ciddi ton",
+            'neutral': "- Nötr ve dengeli ton"
+        }
+        prompt_parts.append(tone_desc.get(analysis.tone, "- Nötr ton"))
+
+        # Sık kullanılan kelimeler
+        if analysis.common_words:
+            prompt_parts.append(f"- Sık kullandığı kelimeler: {', '.join(analysis.common_words[:5])}")
+
+        return "\n".join(prompt_parts)
+
+
 class XProfileAnalyzer:
     """X Profil analizi ve API entegrasyonu"""
 

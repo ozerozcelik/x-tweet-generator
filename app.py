@@ -5,7 +5,37 @@ AI-Powered with Claude API + Profile Analysis
 
 import streamlit as st
 import os
-from tweet_generator import XAlgorithmTweetGenerator, XProfileAnalyzer, TweetCredAnalyzer
+import json
+from pathlib import Path
+from dotenv import load_dotenv
+from tweet_generator import XAlgorithmTweetGenerator, XProfileAnalyzer, TweetCredAnalyzer, TweetStyleAnalyzer
+
+# .env dosyasını yükle
+load_dotenv()
+
+# Config dosyası yolu
+CONFIG_FILE = Path(__file__).parent / "config.json"
+
+def load_config():
+    """Kaydedilmiş ayarları yükle"""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_config(config):
+    """Ayarları kaydet"""
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+    except:
+        pass
+
+# Kaydedilmiş ayarları yükle
+saved_config = load_config()
 
 # Sayfa ayarları
 st.set_page_config(
@@ -52,23 +82,23 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Session state initialization
+# Session state initialization - önce config'den yükle, yoksa default kullan
 if "anthropic_api_key" not in st.session_state:
-    st.session_state.anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    st.session_state.anthropic_api_key = saved_config.get("api_key", os.environ.get("ANTHROPIC_API_KEY", ""))
 if "profile_followers" not in st.session_state:
-    st.session_state.profile_followers = 1000
+    st.session_state.profile_followers = saved_config.get("followers", 1000)
 if "profile_verified" not in st.session_state:
-    st.session_state.profile_verified = False
+    st.session_state.profile_verified = saved_config.get("verified", False)
 if "total_posts" not in st.session_state:
-    st.session_state.total_posts = 0
+    st.session_state.total_posts = saved_config.get("total_posts", 0)
 if "avg_like_rate" not in st.session_state:
-    st.session_state.avg_like_rate = 0.01
+    st.session_state.avg_like_rate = saved_config.get("avg_like_rate", 0.01)
 if "country" not in st.session_state:
-    st.session_state.country = "TR"
+    st.session_state.country = saved_config.get("country", "TR")
 if "niche" not in st.session_state:
-    st.session_state.niche = "genel"
+    st.session_state.niche = saved_config.get("niche", "genel")
 if "language" not in st.session_state:
-    st.session_state.language = "tr"
+    st.session_state.language = saved_config.get("language", "tr")
 
 # Sidebar - Ayarlar
 with st.sidebar:
@@ -215,17 +245,45 @@ with st.sidebar:
         tier = "🆕 Starter"
     st.info(f"Profil Tier: {tier}")
 
-    # TweetCred durumu
+    # TweetCred durumu - gerçek skoru hesapla
+    base_tweetcred = -128
+    tweetcred_estimate = base_tweetcred
     if verified:
-        st.success("🎯 TweetCred: +100 (Verified)")
-    elif account_age >= 2 and followers >= 1000:
-        st.success("🎯 TweetCred: Pozitif")
-    elif account_age < 1 or followers < 100:
-        st.warning("🎯 TweetCred: Düşük Risk")
+        tweetcred_estimate += 100  # -28
+    if account_age >= 2:
+        tweetcred_estimate += 20
+    if followers >= 10000:
+        tweetcred_estimate += 30
+    elif followers >= 1000:
+        tweetcred_estimate += 15
+
+    if tweetcred_estimate >= 17:
+        st.success(f"🎯 TweetCred: {tweetcred_estimate:+d} (Reach alıyor)")
+    elif tweetcred_estimate >= 0:
+        st.warning(f"🎯 TweetCred: {tweetcred_estimate:+d} (Sınırda)")
+    else:
+        st.error(f"🎯 TweetCred: {tweetcred_estimate:+d} (Reach kısıtlı)")
 
     # Engagement Debt uyarısı
     if total_posts > 0 and total_posts < 100 and avg_like_rate < 0.005:
         st.error("⚠️ Engagement Debt Riski!")
+
+    st.markdown("---")
+
+    # Ayarları kaydet butonu
+    if st.button("💾 Ayarları Kaydet", use_container_width=True):
+        config_to_save = {
+            "api_key": st.session_state.anthropic_api_key,
+            "followers": followers,
+            "verified": verified,
+            "total_posts": total_posts,
+            "avg_like_rate": avg_like_rate,
+            "country": country,
+            "niche": niche,
+            "language": language
+        }
+        save_config(config_to_save)
+        st.success("✅ Ayarlar kaydedildi!")
 
 # Generator oluştur
 generator = XAlgorithmTweetGenerator(
@@ -246,6 +304,15 @@ manual_profile = profile_analyzer.create_manual_profile(
 # TweetCred analyzer
 tweetcred_analyzer = TweetCredAnalyzer()
 
+# Style analyzer
+style_analyzer = TweetStyleAnalyzer()
+
+# Session state for style analysis
+if "user_tweets" not in st.session_state:
+    st.session_state.user_tweets = []
+if "style_analysis" not in st.session_state:
+    st.session_state.style_analysis = None
+
 # Header
 st.markdown('<p class="main-header">🐦 X Algorithm Tweet Generator</p>', unsafe_allow_html=True)
 
@@ -260,9 +327,10 @@ with col_status2:
 st.markdown("---")
 
 # Tabs
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "🤖 AI Tweet Üret",
     "📊 Tweet Analizi",
+    "🔍 Profil & Stil",
     "🎯 TweetCred",
     "💰 Monetization",
     "🧵 Thread Oluştur",
@@ -454,8 +522,194 @@ with tab2:
         else:
             st.warning("Lütfen bir tweet yazın.")
 
-# Tab 3: TweetCred Analizi
+# Tab 3: Profil & Stil Analizi
 with tab3:
+    st.header("🔍 Profil Analizi & Stil Öğrenme")
+
+    st.markdown("""
+    Tweetlerinizi analiz ederek:
+    - **Yazım stilinizi** öğrenir
+    - **Başarılı pattern'lerinizi** tespit eder
+    - **Gerçek TweetCred skorunuzu** hesaplar
+    - **Sizin tarzınızda ama viral optimize** tweet üretir
+    """)
+
+    analysis_method = st.radio(
+        "Tweet Analiz Yöntemi",
+        ["Manuel Tweet Yapıştır", "X Username ile Çek"],
+        horizontal=True
+    )
+
+    if analysis_method == "Manuel Tweet Yapıştır":
+        st.subheader("📝 Tweetlerinizi Yapıştırın")
+        st.caption("Her satıra bir tweet yazın. İsterseniz engagement bilgisi de ekleyebilirsiniz.")
+        st.caption("Format: tweet metni | likes | retweets | replies | impressions")
+
+        tweet_input = st.text_area(
+            "Tweetler:",
+            height=300,
+            placeholder="""Bu benim ilk tweetim | 50 | 10 | 5 | 1000
+İkinci tweet buraya | 100 | 25 | 15 | 2500
+Üçüncü tweet...
+...""",
+            key="style_tweets_input"
+        )
+
+        if st.button("🔍 Analiz Et", type="primary", key="analyze_style_btn"):
+            if tweet_input.strip():
+                lines = tweet_input.strip().split('\n')
+                tweets = []
+
+                for line in lines:
+                    parts = line.split('|')
+                    tweet_data = {
+                        "text": parts[0].strip(),
+                        "likes": int(parts[1].strip()) if len(parts) > 1 and parts[1].strip().isdigit() else 0,
+                        "retweets": int(parts[2].strip()) if len(parts) > 2 and parts[2].strip().isdigit() else 0,
+                        "replies": int(parts[3].strip()) if len(parts) > 3 and parts[3].strip().isdigit() else 0,
+                        "impressions": int(parts[4].strip()) if len(parts) > 4 and parts[4].strip().isdigit() else 100
+                    }
+                    if tweet_data["text"]:
+                        tweets.append(tweet_data)
+
+                if tweets:
+                    st.session_state.user_tweets = tweets
+                    st.session_state.style_analysis = style_analyzer.analyze_tweets(tweets)
+                    st.success(f"✅ {len(tweets)} tweet analiz edildi!")
+                else:
+                    st.warning("Geçerli tweet bulunamadı.")
+            else:
+                st.warning("Lütfen tweet girin.")
+
+    else:  # X Username ile Çek
+        st.subheader("🐦 X Username ile Tweet Çekme")
+        st.warning("⚠️ Bu özellik X API Bearer Token gerektirir ve sadece public tweetleri çekebilir.")
+
+        x_username = st.text_input(
+            "X Username:",
+            placeholder="elonmusk (@ olmadan)",
+            key="x_username_input"
+        )
+
+        x_bearer = st.text_input(
+            "X API Bearer Token:",
+            type="password",
+            help="developer.twitter.com'dan alabilirsiniz",
+            key="x_bearer_input"
+        )
+
+        tweet_count = st.slider("Çekilecek Tweet Sayısı", 10, 100, 50)
+
+        if st.button("🔄 Tweetleri Çek", type="primary", key="fetch_tweets_btn"):
+            if x_username and x_bearer:
+                with st.spinner(f"@{x_username} tweetleri çekiliyor..."):
+                    try:
+                        import tweepy
+                        client = tweepy.Client(bearer_token=x_bearer)
+
+                        # Kullanıcı ID'sini al
+                        user = client.get_user(username=x_username)
+                        if user.data:
+                            user_id = user.data.id
+
+                            # Tweetleri çek
+                            tweets_response = client.get_users_tweets(
+                                id=user_id,
+                                max_results=min(tweet_count, 100),
+                                tweet_fields=["public_metrics", "created_at"]
+                            )
+
+                            if tweets_response.data:
+                                tweets = []
+                                for tweet in tweets_response.data:
+                                    metrics = tweet.public_metrics or {}
+                                    tweets.append({
+                                        "text": tweet.text,
+                                        "likes": metrics.get("like_count", 0),
+                                        "retweets": metrics.get("retweet_count", 0),
+                                        "replies": metrics.get("reply_count", 0),
+                                        "impressions": metrics.get("impression_count", metrics.get("like_count", 0) * 20)
+                                    })
+
+                                st.session_state.user_tweets = tweets
+                                st.session_state.style_analysis = style_analyzer.analyze_tweets(tweets)
+                                st.success(f"✅ {len(tweets)} tweet çekildi ve analiz edildi!")
+                            else:
+                                st.error("Tweet bulunamadı.")
+                        else:
+                            st.error("Kullanıcı bulunamadı.")
+                    except Exception as e:
+                        st.error(f"Hata: {str(e)}")
+            else:
+                st.warning("Username ve Bearer Token gerekli.")
+
+    # Analiz sonuçlarını göster
+    if st.session_state.style_analysis:
+        st.markdown("---")
+        st.subheader("📊 Stil Analiz Sonuçları")
+
+        analysis = st.session_state.style_analysis
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric("Ortalama Tweet Uzunluğu", f"{analysis.avg_length:.0f} karakter")
+            st.metric("Ortalama Satır Arası", f"{analysis.avg_line_breaks:.1f}")
+            st.metric("Emoji Kullanımı", f"{analysis.emoji_frequency:.1f} / tweet")
+
+        with col2:
+            st.metric("Soru Sorma Oranı", f"{analysis.question_frequency:.0%}")
+            st.metric("Hashtag Kullanımı", f"{analysis.hashtag_frequency:.1f} / tweet")
+            st.metric("Mention Kullanımı", f"{analysis.mention_frequency:.1f} / tweet")
+
+        with col3:
+            st.metric("Tespit Edilen Ton", analysis.tone.upper())
+            if analysis.avg_engagement_rate > 0:
+                st.metric("Ort. Engagement Rate", f"{analysis.avg_engagement_rate:.2%}")
+
+        if analysis.common_emojis:
+            st.markdown(f"**Sık Kullandığın Emojiler:** {' '.join(analysis.common_emojis)}")
+
+        if analysis.common_words:
+            st.markdown(f"**Sık Kullandığın Kelimeler:** {', '.join(analysis.common_words)}")
+
+        st.markdown("---")
+        st.subheader("🎯 AI Prompt Özeti")
+        st.info(style_analyzer.generate_style_prompt(analysis))
+
+        st.markdown("---")
+        st.subheader("🚀 Tarzında Tweet Üret")
+
+        if generator.client:
+            style_topic = st.text_input("Konu:", placeholder="Yapay zeka, startup, kariyer...", key="style_gen_topic")
+
+            if st.button("✨ Benim Tarzımda Üret", type="primary", key="style_generate_btn"):
+                if style_topic:
+                    with st.spinner("Senin tarzında tweet üretiliyor..."):
+                        style_prompt = style_analyzer.generate_style_prompt(analysis)
+                        custom_instr = f"{style_prompt}\n\nViral potansiyeli artır ama tarzı koru."
+
+                        tweet = generator.generate_with_ai(
+                            topic=style_topic,
+                            style=analysis.tone if analysis.tone != "neutral" else "casual",
+                            length="medium" if analysis.avg_length < 300 else "long",
+                            include_emoji=analysis.emoji_frequency >= 0.5,
+                            custom_instructions=custom_instr,
+                            language=language,
+                            profile=manual_profile
+                        )
+
+                    st.text_area("Üretilen Tweet:", value=tweet, height=200, key="style_result")
+
+                    tweet_analysis = generator.analyze_tweet(tweet)
+                    st.metric("Algoritma Skoru", f"{tweet_analysis.score}/100")
+                else:
+                    st.warning("Lütfen bir konu girin.")
+        else:
+            st.info("👈 AI tweet üretimi için sol menüden API key girin.")
+
+# Tab 4: TweetCred Analizi (eski tab3)
+with tab4:
     st.header("🎯 TweetCred Skoru & Shadow Hierarchy")
 
     # Verified durumuna göre başlangıç skoru göster
@@ -467,12 +721,19 @@ with tab3:
     <div class="profile-card">
         <h4>TweetCred Nedir?</h4>
         <p>Jack Dorsey'in geliştirdiği gizli otorite ölçeği. Hesabınızın algoritmadaki "güvenilirlik puanı"dır.</p>
+        <p><strong>📊 SKOR ÖLÇEĞİ:</strong></p>
         <ul>
-            <li>Yeni hesaplar <strong>-128</strong> ile başlar</li>
-            <li>Minimum <strong>+17</strong> olmalı reach almak için</li>
-            <li>Verified hesaplar <strong>+100</strong> bonus alır → <strong>{-128} + {100} = {-28}</strong> ile başlar</li>
+            <li><strong>-128</strong> → Yeni hesap başlangıcı (minimum)</li>
+            <li><strong>-50</strong> → Cold Start Suppression eşiği (sadece %10 dağıtım)</li>
+            <li><strong>0</strong> → Nötr</li>
+            <li><strong>+17</strong> → Reach almak için MİNİMUM gerekli skor</li>
         </ul>
-        <p><strong>Senin başlangıç skorun:</strong> {base_start} {f'+ {verified_bonus_val} (Verified)' if verified else ''} = <strong>{starting_score}</strong></p>
+        <p><strong>Verified Avantajı:</strong> -128 + 100 = <strong>-28</strong> ile başlarsın (hâlâ +17'nin altında!)</p>
+        <hr>
+        <p><strong>🎯 Senin Tahmini Başlangıcın:</strong> {base_start} {f'+ {verified_bonus_val} (Verified)' if verified else ''} = <strong>{starting_score}</strong></p>
+        <p style="color: {'green' if starting_score >= 17 else 'orange' if starting_score >= 0 else 'red'}">
+            {'✅ Reach alabilirsin' if starting_score >= 17 else '⚠️ +17 ye ulaşman lazım' if starting_score >= -50 else '❌ Cold start suppression riski'}
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -651,7 +912,7 @@ with tab3:
             st.error(f"✗ {avoid}")
 
 # Tab 4: Monetization
-with tab4:
+with tab5:
     st.header("💰 Monetization Analizi")
 
     st.markdown("""
@@ -797,7 +1058,7 @@ with tab4:
         """)
 
 # Tab 5: Thread Oluştur (eski tab3)
-with tab5:
+with tab6:
     st.header("🧵 AI ile Thread Oluştur")
 
     if not generator.client:
@@ -839,7 +1100,7 @@ with tab5:
                 st.warning("Lütfen bir konu girin.")
 
 # Tab 6: Yeniden Yaz (eski tab4)
-with tab6:
+with tab7:
     st.header("✨ Tweet'i Yeniden Yaz")
 
     if not generator.client:
@@ -886,7 +1147,7 @@ with tab6:
                 st.warning("Lütfen bir tweet yazın.")
 
 # Tab 7: Şablonlar (eski tab5)
-with tab7:
+with tab8:
     st.header("📝 Viral Tweet Şablonları")
 
     categories = generator.get_template_categories()
@@ -902,7 +1163,7 @@ with tab7:
             st.code(t['template'], language=None)
 
 # Tab 8: Zamanlar (eski tab6)
-with tab8:
+with tab9:
     st.header("⏰ En İyi Paylaşım Zamanları")
 
     times = generator.get_best_posting_times()
