@@ -5,7 +5,7 @@ AI-Powered with Claude API + Profile Analysis
 
 import streamlit as st
 import os
-from tweet_generator import XAlgorithmTweetGenerator, XProfileAnalyzer
+from tweet_generator import XAlgorithmTweetGenerator, XProfileAnalyzer, TweetCredAnalyzer
 
 # Sayfa ayarları
 st.set_page_config(
@@ -59,6 +59,14 @@ if "profile_followers" not in st.session_state:
     st.session_state.profile_followers = 1000
 if "profile_verified" not in st.session_state:
     st.session_state.profile_verified = False
+if "total_posts" not in st.session_state:
+    st.session_state.total_posts = 0
+if "avg_like_rate" not in st.session_state:
+    st.session_state.avg_like_rate = 0.01
+if "country" not in st.session_state:
+    st.session_state.country = "TR"
+if "niche" not in st.session_state:
+    st.session_state.niche = "genel"
 
 # Sidebar - Ayarlar
 with st.sidebar:
@@ -110,6 +118,59 @@ with st.sidebar:
 
     st.markdown("---")
 
+    st.subheader("📊 TweetCred Bilgileri")
+    st.caption("Algoritma analizi için")
+
+    total_posts = st.number_input(
+        "Toplam Tweet Sayısı",
+        min_value=0,
+        max_value=1000000,
+        value=st.session_state.total_posts,
+        step=10
+    )
+    st.session_state.total_posts = total_posts
+
+    avg_like_rate = st.slider(
+        "Ort. Beğeni Oranı (%)",
+        min_value=0.0,
+        max_value=10.0,
+        value=st.session_state.avg_like_rate * 100,
+        step=0.1,
+        help="Beğeni / Görüntülenme oranı"
+    ) / 100
+    st.session_state.avg_like_rate = avg_like_rate
+
+    country = st.selectbox(
+        "Ülke",
+        ["TR", "US", "EU", "OTHER"],
+        format_func=lambda x: {
+            "TR": "🇹🇷 Türkiye (Tier 3)",
+            "US": "🇺🇸 ABD (Tier 1)",
+            "EU": "🇪🇺 Avrupa (Tier 2)",
+            "OTHER": "🌍 Diğer"
+        }[x],
+        index=["TR", "US", "EU", "OTHER"].index(st.session_state.country)
+    )
+    st.session_state.country = country
+
+    niche = st.selectbox(
+        "Niş/Sektör",
+        ["genel", "finans", "kripto", "teknoloji", "eglence", "spor", "saglik", "egitim"],
+        format_func=lambda x: {
+            "genel": "📌 Genel",
+            "finans": "💰 Finans/Banka",
+            "kripto": "₿ Kripto/Trading",
+            "teknoloji": "💻 Teknoloji",
+            "eglence": "🎬 Eğlence",
+            "spor": "⚽ Spor",
+            "saglik": "🏥 Sağlık",
+            "egitim": "📚 Eğitim"
+        }[x]
+    )
+    st.session_state.niche = niche
+
+    st.markdown("---")
+
     # Durum göstergeleri
     if st.session_state.anthropic_api_key:
         st.success("✅ AI Aktif")
@@ -131,6 +192,18 @@ with st.sidebar:
         tier = "🆕 Starter"
     st.info(f"Profil Tier: {tier}")
 
+    # TweetCred durumu
+    if verified:
+        st.success("🎯 TweetCred: +100 (Verified)")
+    elif account_age >= 2 and followers >= 1000:
+        st.success("🎯 TweetCred: Pozitif")
+    elif account_age < 1 or followers < 100:
+        st.warning("🎯 TweetCred: Düşük Risk")
+
+    # Engagement Debt uyarısı
+    if total_posts > 0 and total_posts < 100 and avg_like_rate < 0.005:
+        st.error("⚠️ Engagement Debt Riski!")
+
 # Generator oluştur
 generator = XAlgorithmTweetGenerator(
     api_key=st.session_state.anthropic_api_key if st.session_state.anthropic_api_key else None,
@@ -147,6 +220,9 @@ manual_profile = profile_analyzer.create_manual_profile(
     account_age_years=account_age
 )
 
+# TweetCred analyzer
+tweetcred_analyzer = TweetCredAnalyzer()
+
 # Header
 st.markdown('<p class="main-header">🐦 X Algorithm Tweet Generator</p>', unsafe_allow_html=True)
 
@@ -161,9 +237,11 @@ with col_status2:
 st.markdown("---")
 
 # Tabs
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "🤖 AI Tweet Üret",
     "📊 Tweet Analizi",
+    "🎯 TweetCred",
+    "💰 Monetization",
     "🧵 Thread Oluştur",
     "✨ Yeniden Yaz",
     "📝 Şablonlar",
@@ -351,8 +429,338 @@ with tab2:
         else:
             st.warning("Lütfen bir tweet yazın.")
 
-# Tab 3: Thread Oluştur
+# Tab 3: TweetCred Analizi
 with tab3:
+    st.header("🎯 TweetCred Skoru & Shadow Hierarchy")
+
+    st.markdown("""
+    <div class="profile-card">
+        <h4>TweetCred Nedir?</h4>
+        <p>Jack Dorsey'in geliştirdiği gizli otorite ölçeği. Hesabınızın algoritmadaki "güvenilirlik puanı"dır.</p>
+        <ul>
+            <li>Yeni hesaplar <strong>-128</strong> ile başlar</li>
+            <li>Minimum <strong>+17</strong> olmalı reach almak için</li>
+            <li>Verified hesaplar <strong>+100</strong> bonus alır</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # TweetCred hesaplama
+    tweetcred = tweetcred_analyzer.calculate_tweetcred(
+        profile=manual_profile,
+        avg_engagement_rate=avg_like_rate
+    )
+
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        # TweetCred skoru
+        score = tweetcred.total_score
+        if tweetcred.is_positive:
+            score_color = "score-high"
+            status_emoji = "✅"
+            status_text = "REACH ALIYORSUNUZ"
+        elif score >= 0:
+            score_color = "score-medium"
+            status_emoji = "⚠️"
+            status_text = "SINIRDA"
+        else:
+            score_color = "score-low"
+            status_emoji = "❌"
+            status_text = "REACH KISITLI"
+
+        st.markdown(f"""
+        <div class="score-box {score_color}">
+            {status_emoji} TweetCred<br>
+            {score:+d}
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown(f"**Durum:** {status_text}")
+        if tweetcred.has_cold_start_suppression:
+            st.error("⚠️ Cold Start Suppression Aktif!")
+        st.metric("Dağıtım Yüzdesi", f"{tweetcred.distribution_rate:.0%}")
+
+    with col2:
+        # Faktör breakdown
+        st.subheader("📊 Skor Bileşenleri")
+
+        factors = {
+            "Base Score": tweetcred.base_score,
+            "Verified Bonus": tweetcred.verified_boost,
+            "Bio Score": tweetcred.bio_score,
+            "Follower Ratio": tweetcred.ratio_score,
+            "Language Score": tweetcred.language_score,
+            "Engagement History": tweetcred.engagement_history_score,
+            "Niche Focus": tweetcred.niche_focus_score
+        }
+
+        for label, value in factors.items():
+            if value > 0:
+                st.success(f"✓ {label}: +{value}")
+            elif value < 0:
+                st.error(f"✗ {label}: {value}")
+            else:
+                st.info(f"○ {label}: {value}")
+
+        # Öneriler
+        st.subheader("💡 TweetCred İyileştirme")
+        tips = []
+        if not verified:
+            tips.append("Verified olmak +100 boost sağlar")
+        if followers < 1000:
+            tips.append("Takipçi sayısını artırın (1K+ hedef)")
+        if avg_like_rate < 0.02:
+            tips.append("Etkileşim oranınızı %2+ yapın")
+
+        for tip in tips:
+            st.warning(tip)
+
+    st.markdown("---")
+
+    # Engagement Debt Analizi
+    st.subheader("⚠️ Engagement Debt (Cold Start Suppression)")
+
+    # Yaklaşık değerler hesapla
+    est_impressions = max(followers * 10, 1000) if total_posts > 0 else 1000
+    est_likes = int(est_impressions * avg_like_rate)
+
+    engagement_debt = tweetcred_analyzer.analyze_engagement_debt(
+        posts=total_posts,
+        likes=est_likes,
+        impressions=est_impressions
+    )
+
+    col3, col4 = st.columns(2)
+
+    with col3:
+        if engagement_debt.has_debt:
+            st.error(f"""
+            **ENGAGEMENT DEBT AKTİF**
+
+            Beğeni oranınız: {engagement_debt.engagement_rate:.2%}
+            Bu %0.5 eşiğinin altında!
+
+            **Şiddet:** {engagement_debt.severity.upper()}
+            **Borç Seviyesi:** {engagement_debt.debt_level:.0%}
+            """)
+        else:
+            if total_posts < 100:
+                st.warning(f"""
+                **KRİTİK DÖNEM**
+
+                İlk 100 postta {100 - total_posts} post kaldı.
+                Şu anki oran: {engagement_debt.engagement_rate:.2%}
+
+                **Dikkat:** %0.5'in üstünde kalın!
+                """)
+            else:
+                st.success(f"""
+                **ENGAGEMENT DEBT YOK**
+
+                Beğeni oranınız: {engagement_debt.engagement_rate:.2%}
+                Dağıtım: %100
+                """)
+
+    with col4:
+        st.subheader("🔧 Çıkış Stratejileri")
+        strategies = [
+            "Viral potansiyelli kaliteli içerik paylaşın",
+            "Niche topluluklarla etkileşime girin",
+            "En aktif saatlerde paylaşım yapın",
+            "Soru soran veya tartışma başlatan tweetler atın",
+            "İlk 100 tweet'te agresif promosyon yapmayın"
+        ]
+        for strategy in strategies:
+            st.info(strategy)
+
+    st.markdown("---")
+
+    # Dwell Time ipuçları
+    st.subheader("⏱️ Dwell Time Optimizasyonu")
+    st.markdown("""
+    **Kritik Bilgi:** 3 saniyeden az okuma = NEGATİF SİNYAL
+
+    Algoritmaya göre tweet'inizin okunma süresi düşükse, kalite çarpanınız %15-20 düşer.
+    """)
+
+    col5, col6 = st.columns(2)
+
+    with col5:
+        st.markdown("**Dwell Time Artırma Teknikleri:**")
+        increase_tips = [
+            "Uzun, katmanlı içerik yazın (150+ kelime)",
+            "Satır araları kullanın (okuma hızını düşürür)",
+            "Listeler ve bullet point'ler ekleyin",
+            "İlk cümleyi merak uyandırıcı yapın",
+            "Son satırı call-to-action yapın",
+            "Hikaye formatı kullanın"
+        ]
+        for tip in increase_tips:
+            st.success(f"✓ {tip}")
+
+    with col6:
+        st.markdown("**Kaçınılması Gerekenler:**")
+        avoid_tips = [
+            "Tek satırlık tweetler",
+            "Sadece link paylaşmak",
+            "Anlaşılması zor jargon",
+            "Çok uzun paragraflar (göz yorar)",
+            "Emoji spam (dikkat dağıtır)"
+        ]
+        for avoid in avoid_tips:
+            st.error(f"✗ {avoid}")
+
+# Tab 4: Monetization
+with tab4:
+    st.header("💰 Monetization Analizi")
+
+    st.markdown("""
+    <div class="profile-card">
+        <h4>X Monetization Nasıl Çalışır?</h4>
+        <p>Sabit ödeme YOK! Reklam gelirinin <strong>%30-50</strong>'sini alırsınız.</p>
+        <p><strong>RPM (1000 görüntülenme başı gelir)</strong> ülkeye ve nişe göre değişir:</p>
+        <ul>
+            <li>🇺🇸 ABD: $2-8 RPM</li>
+            <li>🇪🇺 Avrupa: $1-4 RPM</li>
+            <li>🇹🇷 Türkiye (Tier 3): $0.05-0.5 RPM</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Monetization analizi
+    monetization = tweetcred_analyzer.get_monetization_analysis(
+        profile=manual_profile,
+        niche=niche,
+        target_market=country
+    )
+
+    # Ülke tier'ına göre RPM hesapla
+    tier_map = {"US": "Tier 1", "EU": "Tier 2", "TR": "Tier 3", "OTHER": "Tier 3"}
+    country_tier = tier_map.get(country, "Tier 3")
+
+    # Tahmini aylık potansiyel (günde 3 tweet, 10% reach varsayımı)
+    daily_impressions = followers * 0.1 * 3 if followers > 0 else 300
+    monthly_impressions = daily_impressions * 30
+    monthly_potential = (monthly_impressions / 1000) * monetization.estimated_rpm
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric(
+            "Tahmini RPM",
+            f"${monetization.estimated_rpm:.2f}",
+            help="1000 görüntülenme başı gelir"
+        )
+
+    with col2:
+        st.metric(
+            "Aylık Potansiyel",
+            f"${monthly_potential:.2f}",
+            help="Günde 3 tweet varsayımıyla"
+        )
+
+    with col3:
+        tier_colors = {"Tier 1": "🟢", "Tier 2": "🟡", "Tier 3": "🔴"}
+        st.metric(
+            "Ülke Tier",
+            f"{tier_colors.get(country_tier, '⚪')} {country_tier}"
+        )
+
+    st.markdown("---")
+
+    # Niş analizi
+    col4, col5 = st.columns(2)
+
+    with col4:
+        st.subheader("📈 Niş Değerlendirmesi")
+
+        niche_quality = monetization.niche_profitability
+        if niche_quality == "high":
+            st.success(f"""
+            **YÜKSEK DEĞER NİŞİ**
+
+            {niche.upper()} sektörü reklamcılar için yüksek değerli.
+            Banka, fintech, kripto reklamları premium ödüyor.
+            """)
+        elif niche_quality == "medium":
+            st.warning(f"""
+            **ORTA DEĞER NİŞİ**
+
+            {niche.upper()} sektörü makul gelir potansiyeli taşıyor.
+            """)
+        else:
+            st.error(f"""
+            **DÜŞÜK DEĞER NİŞİ**
+
+            {niche.upper()} sektöründe RPM düşük.
+            Yüksek hacim gerekiyor.
+            """)
+
+        # Önerilen nişler
+        if monetization.recommended_niches:
+            st.subheader("💡 Önerilen Nişler")
+            for rec_niche in monetization.recommended_niches:
+                st.info(f"• {rec_niche}")
+
+    with col5:
+        st.subheader("🎯 Önerilen Stratejiler")
+        for tip in monetization.tips:
+            st.info(tip)
+
+        # Uyarılar
+        if monetization.warnings:
+            st.subheader("⚠️ Uyarılar")
+            for warning in monetization.warnings:
+                st.warning(warning)
+
+    st.markdown("---")
+
+    # Mention stratejisi
+    st.subheader("💡 GİZLİ BİLGİ: Mention Stratejisi")
+
+    st.markdown("""
+    Para kazanmanın gerçek yolu **mention'lar**dır:
+
+    1. **Mention = Reklam Gösterimi**: Birini mention ettiğinizde, o kişi bildirimi açınca reklam görür
+    2. **Zincir Etkisi**: Her mention yeni potansiyel reklam gösterimine dönüşür
+    3. **Tartışma Başlatın**: İnsanların sizi mention etmesi için tartışmalı konulara girin
+
+    **NOT:** Bu yüzden viral hesaplar sürekli mention topluyor!
+    """)
+
+    mention_tips = [
+        "Sektör liderlerini etiketleyerek onay alın",
+        "Tartışmalı konularda fikir belirtin",
+        "Thread'lerde kullanıcıları mention edin",
+        "Soru-cevap formatı kullanın"
+    ]
+    st.markdown("**Mention Artırma Taktikleri:**")
+    for tip in mention_tips:
+        st.success(f"✓ {tip}")
+
+    st.markdown("---")
+
+    # Türkiye özel uyarı
+    if country == "TR":
+        st.error("""
+        **⚠️ TÜRKİYE İÇİN ÖNEMLİ UYARI**
+
+        Türkiye Tier 3 ülke olduğu için RPM çok düşük ($0.05-0.5).
+
+        **Seçenekler:**
+        1. İngilizce içerik üretin → ABD/Avrupa kitlesine ulaşın
+        2. Yüksek değerli nişlere yönelin (finans, kripto, trading)
+        3. Hacim odaklı strateji → Çok tweet, çok mention
+        4. Sponsorluk ve affiliate gelirlerine yönelin (X monetization'dan daha kârlı)
+        """)
+
+# Tab 5: Thread Oluştur (eski tab3)
+with tab5:
     st.header("🧵 AI ile Thread Oluştur")
 
     if not generator.client:
@@ -393,8 +801,8 @@ with tab3:
             else:
                 st.warning("Lütfen bir konu girin.")
 
-# Tab 4: Yeniden Yaz
-with tab4:
+# Tab 6: Yeniden Yaz (eski tab4)
+with tab6:
     st.header("✨ Tweet'i Yeniden Yaz")
 
     if not generator.client:
@@ -440,8 +848,8 @@ with tab4:
             else:
                 st.warning("Lütfen bir tweet yazın.")
 
-# Tab 5: Şablonlar
-with tab5:
+# Tab 7: Şablonlar (eski tab5)
+with tab7:
     st.header("📝 Viral Tweet Şablonları")
 
     categories = generator.get_template_categories()
@@ -456,8 +864,8 @@ with tab5:
             st.markdown(f"**{t['description']}**")
             st.code(t['template'], language=None)
 
-# Tab 6: Zamanlar
-with tab6:
+# Tab 8: Zamanlar (eski tab6)
+with tab8:
     st.header("⏰ En İyi Paylaşım Zamanları")
 
     times = generator.get_best_posting_times()

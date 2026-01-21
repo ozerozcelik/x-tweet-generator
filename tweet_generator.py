@@ -73,6 +73,35 @@ ACTION_WEIGHTS = {
 MAX_CHARS_STANDARD = 280
 MAX_CHARS_PREMIUM = 25000
 
+# TweetCred Skoru Sabitleri (Jack'in geliştirdiği otorite skalası)
+TWEETCRED_DEFAULT = -128  # Her hesap buradan başlar
+TWEETCRED_VERIFIED_BOOST = 100  # Mavi tik +100 puan
+TWEETCRED_MIN_POSITIVE = 17  # Bu skora ulaşmadan erişim neredeyse sıfır
+TWEETCRED_COLD_START_THRESHOLD = -50  # Bu skorun altında cold start suppression
+
+# Engagement Debt Sabitleri
+ENGAGEMENT_DEBT_THRESHOLD = 0.005  # %0.5 like/impression oranı
+COLD_START_DISTRIBUTION = 0.10  # %10 dağıtım (cold start suppression aktifken)
+
+# Dwell Time Sabitleri
+DWELL_TIME_MIN_SECONDS = 3  # 3 saniyeden az = negatif sinyal
+DWELL_TIME_QUALITY_PENALTY = 0.15  # %15-20 quality multiplier düşüşü
+
+# Türkiye Reklam Nişleri (yerli markalar)
+TR_PROFITABLE_NICHES = [
+    "finans", "banka", "borsa", "kripto", "yatırım",
+    "bahis", "iddia", "casino",
+    "e-ticaret", "pazaryeri", "alışveriş",
+    "teknoloji", "yazılım", "startup"
+]
+
+# Global Karlı Nişler (US/EU reklamverenler)
+GLOBAL_PROFITABLE_NICHES = [
+    "crypto", "trading", "forex", "stocks", "investment",
+    "saas", "tech", "ai", "fintech",
+    "marketing", "business", "entrepreneurship"
+]
+
 
 @dataclass
 class TweetAnalysis:
@@ -130,6 +159,347 @@ class XProfile:
             return "nano"  # 100+
         else:
             return "starter"  # <100
+
+
+@dataclass
+class TweetCredScore:
+    """
+    TweetCred Skoru - Jack'in geliştirdiği hesap otorite skalası
+
+    Her hesap -128'den başlar.
+    Minimum +17'ye ulaşmadan erişim gücü neredeyse sıfır.
+    Verified hesaplar +100 boost alır (-28'den başlar).
+    """
+    base_score: int = TWEETCRED_DEFAULT
+    verified_boost: int = 0
+    bio_score: int = 0
+    ratio_score: int = 0
+    language_score: int = 0
+    engagement_history_score: int = 0
+    niche_focus_score: int = 0
+
+    @property
+    def total_score(self) -> int:
+        """Toplam TweetCred skoru"""
+        return (
+            self.base_score +
+            self.verified_boost +
+            self.bio_score +
+            self.ratio_score +
+            self.language_score +
+            self.engagement_history_score +
+            self.niche_focus_score
+        )
+
+    @property
+    def is_positive(self) -> bool:
+        """Skor pozitif mi?"""
+        return self.total_score >= TWEETCRED_MIN_POSITIVE
+
+    @property
+    def has_cold_start_suppression(self) -> bool:
+        """Cold start suppression aktif mi?"""
+        return self.total_score <= TWEETCRED_COLD_START_THRESHOLD
+
+    @property
+    def distribution_rate(self) -> float:
+        """Post dağıtım oranı"""
+        if self.has_cold_start_suppression:
+            return COLD_START_DISTRIBUTION  # %10
+        elif not self.is_positive:
+            return 0.3  # %30
+        elif self.total_score >= 50:
+            return 1.0  # %100
+        else:
+            return 0.5 + (self.total_score / 100)  # %50-100 arası
+
+
+@dataclass
+class EngagementDebt:
+    """
+    Engagement Debt - Algoritmik Borç Sistemi
+
+    İlk 100 post'ta %0.5'ten düşük like/impression oranı varsa,
+    skor kalıcı olarak -50'ye kadar düşebilir ve
+    "cold start suppression" modunu tetikler.
+    """
+    total_posts: int = 0
+    total_likes: int = 0
+    total_impressions: int = 0
+    debt_level: float = 0.0  # 0-1 arası, 1 = maksimum borç
+
+    @property
+    def engagement_rate(self) -> float:
+        """Like/Impression oranı"""
+        if self.total_impressions == 0:
+            return 0.0
+        return self.total_likes / self.total_impressions
+
+    @property
+    def has_debt(self) -> bool:
+        """Engagement borcu var mı?"""
+        return (
+            self.total_posts >= 10 and
+            self.engagement_rate < ENGAGEMENT_DEBT_THRESHOLD
+        )
+
+    @property
+    def severity(self) -> str:
+        """Borç şiddeti"""
+        if not self.has_debt:
+            return "none"
+        rate = self.engagement_rate
+        if rate < 0.001:
+            return "critical"  # %0.1'in altı
+        elif rate < 0.003:
+            return "severe"  # %0.3'ün altı
+        else:
+            return "moderate"  # %0.5'in altı
+
+
+@dataclass
+class MonetizationAnalysis:
+    """X'den para kazanma analizi"""
+    estimated_rpm: float  # Revenue per mille (1000 görüntülenme başına gelir)
+    niche_profitability: str  # low, medium, high
+    target_market: str  # TR, EU, US, Global
+    recommended_niches: List[str]
+    warnings: List[str]
+    tips: List[str]
+
+
+class TweetCredAnalyzer:
+    """
+    TweetCred ve Engagement Debt Analizi
+
+    X algoritmasının gizli otorite skorlama sistemini simüle eder.
+    """
+
+    def calculate_tweetcred(
+        self,
+        profile: XProfile,
+        avg_engagement_rate: float = 0.02,
+        post_consistency: float = 0.5,
+        niche_focus: float = 0.5
+    ) -> TweetCredScore:
+        """
+        TweetCred skorunu hesaplar.
+
+        Args:
+            profile: X profil bilgileri
+            avg_engagement_rate: Ortalama engagement oranı
+            post_consistency: Post tutarlılığı (0-1)
+            niche_focus: Niş odaklanma (0-1)
+
+        Returns:
+            TweetCredScore objesi
+        """
+        score = TweetCredScore()
+
+        # Verified boost
+        if profile.verified:
+            score.verified_boost = TWEETCRED_VERIFIED_BOOST
+
+        # Bio skoru (dolu ve kaliteli bio)
+        if profile.description:
+            bio_len = len(profile.description)
+            if bio_len >= 100:
+                score.bio_score = 15
+            elif bio_len >= 50:
+                score.bio_score = 10
+            elif bio_len >= 20:
+                score.bio_score = 5
+
+        # Takip/Takipçi ratio skoru
+        ratio = profile.follower_ratio
+        if ratio >= 10:
+            score.ratio_score = 30
+        elif ratio >= 5:
+            score.ratio_score = 20
+        elif ratio >= 2:
+            score.ratio_score = 15
+        elif ratio >= 1:
+            score.ratio_score = 10
+        elif ratio >= 0.5:
+            score.ratio_score = 5
+        else:
+            score.ratio_score = -10  # Çok düşük ratio penaltı
+
+        # Engagement history skoru
+        if avg_engagement_rate >= 0.05:
+            score.engagement_history_score = 40
+        elif avg_engagement_rate >= 0.03:
+            score.engagement_history_score = 30
+        elif avg_engagement_rate >= 0.02:
+            score.engagement_history_score = 20
+        elif avg_engagement_rate >= 0.01:
+            score.engagement_history_score = 10
+        elif avg_engagement_rate >= 0.005:
+            score.engagement_history_score = 0
+        else:
+            score.engagement_history_score = -20  # Düşük engagement penaltı
+
+        # Niş odaklanma skoru
+        score.niche_focus_score = int(niche_focus * 30)
+
+        # Hesap yaşı bonusu
+        age_days = profile.account_age_days
+        if age_days >= 365 * 3:  # 3+ yıl
+            score.engagement_history_score += 15
+        elif age_days >= 365:  # 1+ yıl
+            score.engagement_history_score += 10
+        elif age_days >= 180:  # 6+ ay
+            score.engagement_history_score += 5
+
+        return score
+
+    def analyze_engagement_debt(
+        self,
+        posts: int,
+        likes: int,
+        impressions: int
+    ) -> EngagementDebt:
+        """
+        Engagement debt analizi yapar.
+
+        Args:
+            posts: Toplam post sayısı
+            likes: Toplam beğeni sayısı
+            impressions: Toplam görüntülenme sayısı
+
+        Returns:
+            EngagementDebt objesi
+        """
+        debt = EngagementDebt(
+            total_posts=posts,
+            total_likes=likes,
+            total_impressions=impressions
+        )
+
+        if debt.has_debt:
+            # Borç seviyesini hesapla
+            rate = debt.engagement_rate
+            if rate < 0.001:
+                debt.debt_level = 1.0
+            elif rate < 0.003:
+                debt.debt_level = 0.7
+            else:
+                debt.debt_level = 0.4
+
+        return debt
+
+    def get_monetization_analysis(
+        self,
+        profile: XProfile,
+        niche: str,
+        target_market: str = "TR"
+    ) -> MonetizationAnalysis:
+        """
+        Monetization analizi yapar.
+
+        Args:
+            profile: Profil bilgileri
+            niche: İçerik nişi
+            target_market: Hedef pazar (TR, EU, US)
+
+        Returns:
+            MonetizationAnalysis objesi
+        """
+        warnings = []
+        tips = []
+        recommended_niches = []
+
+        niche_lower = niche.lower()
+
+        # RPM tahmini (1000 görüntülenme başına gelir)
+        base_rpm = 0.5  # Base RPM (USD)
+
+        # Market çarpanı
+        market_multiplier = {
+            "US": 3.0,
+            "EU": 2.0,
+            "TR": 0.3,  # Tier 3 ülke
+            "Global": 1.5
+        }.get(target_market, 1.0)
+
+        # Niş çarpanı
+        if any(n in niche_lower for n in ["crypto", "kripto", "borsa", "trading", "forex"]):
+            niche_multiplier = 3.0
+            niche_profitability = "high"
+        elif any(n in niche_lower for n in ["finans", "banka", "yatırım", "fintech"]):
+            niche_multiplier = 2.5
+            niche_profitability = "high"
+        elif any(n in niche_lower for n in ["bahis", "iddia", "casino"]):
+            niche_multiplier = 2.0
+            niche_profitability = "medium-high"
+        elif any(n in niche_lower for n in ["tech", "yazılım", "ai", "startup"]):
+            niche_multiplier = 1.5
+            niche_profitability = "medium"
+        elif any(n in niche_lower for n in ["e-ticaret", "pazaryeri", "alışveriş"]):
+            niche_multiplier = 1.3
+            niche_profitability = "medium"
+        else:
+            niche_multiplier = 0.8
+            niche_profitability = "low"
+
+        # Verified çarpanı
+        verified_multiplier = 1.3 if profile.verified else 1.0
+
+        # Final RPM
+        estimated_rpm = base_rpm * market_multiplier * niche_multiplier * verified_multiplier
+
+        # Uyarılar
+        if target_market == "TR":
+            warnings.append("Türkiye tier 3 ülke - RPM düşük")
+            warnings.append("Yerli markaların reklam verdiği nişlere odaklan")
+            recommended_niches = TR_PROFITABLE_NICHES[:5]
+            tips.append("Finans, borsa, kripto nişlerinde içerik üret")
+            tips.append("Bahis/iddia platformları TR'de yüksek reklam bütçesi harcıyor")
+
+        if target_market in ["US", "EU"]:
+            tips.append("Mention farm yapan hesaplar gibi strateji izle (@cb_doge örneği)")
+            tips.append("İngilizce içerik = daha yüksek RPM")
+            recommended_niches = GLOBAL_PROFITABLE_NICHES[:5]
+
+        if not profile.verified:
+            warnings.append("Mavi tik olmadan gelir potansiyeli sınırlı")
+            tips.append("X Premium al - duplicate content detector'den %30 muafiyet")
+
+        # Genel tavsiyeler
+        tips.append("Mention'lara çekmeye odaklan - asıl gelir oradan")
+        tips.append("Dwell time'ı artır - uzun okunabilir içerik")
+
+        return MonetizationAnalysis(
+            estimated_rpm=round(estimated_rpm, 2),
+            niche_profitability=niche_profitability,
+            target_market=target_market,
+            recommended_niches=recommended_niches,
+            warnings=warnings,
+            tips=tips
+        )
+
+    def get_dwell_time_tips(self, tweet: str) -> List[str]:
+        """Tweet için dwell time optimizasyon önerileri"""
+        tips = []
+        lines = tweet.count('\n')
+        words = len(tweet.split())
+
+        if words < 30:
+            tips.append("Daha uzun içerik = daha fazla dwell time")
+
+        if lines < 3:
+            tips.append("Satır araları ekle - okuma süresini artırır")
+
+        if '?' not in tweet:
+            tips.append("Soru ekle - düşünme süresi = dwell time")
+
+        if not any(c in tweet for c in ['1.', '2.', '•', '-', '→']):
+            tips.append("Liste formatı kullan - taranabilir içerik dwell time artırır")
+
+        if 'ama' not in tweet.lower() and 'ancak' not in tweet.lower() and 'fakat' not in tweet.lower():
+            tips.append("Plot twist/karşıtlık ekle - merak uyandırır")
+
+        return tips
 
 
 class XProfileAnalyzer:
@@ -990,21 +1360,40 @@ POZİTİF SİNYALLER (MUTLAKA KULLAN):
 - Kişisel hikaye → Duygusal bağ (+25%)
 - Tartışmalı görüş → Engagement patlaması (+40%)
 
-DWELL TIME OPTİMİZASYONU (ÇOK ÖNEMLİ):
-Dwell time = kullanıcının tweet'te geçirdiği süre. Algoritma bunu ölçer.
+DWELL TIME OPTİMİZASYONU (EN KRİTİK FAKTÖR):
+Dwell time = kullanıcının tweet'te geçirdiği süre.
+⚠️ 3 SANİYEDEN AZ OKUMA = NEGATİF SİNYAL
+Bu negatif sinyal "quality multiplier"ı %15-20 düşürür!
+
+DWELL TIME ARTIRMA TAKTİKLERİ:
 - Uzun, değerli içerik → Daha fazla okuma süresi
-- Merak uyandıran açılış → Scroll durur, okumaya devam
+- Merak uyandıran açılış → "Scroll pass" engellenir
 - Liste/madde formatı → Taranabilir, daha uzun kalış
-- Hikaye anlatımı → Sonunu merak ettir
+- Hikaye anlatımı → Sonunu merak ettir, okumaya devam
 - "Plot twist" veya sürpriz → Dikkat tutar
 - Paragraflar arası boşluk → Göz dinlenir, devam eder
+- Soru sormak → Düşünme süresi = extra dwell time
+- Karşıtlık/Çelişki → "ama", "ancak", "fakat" kullan
+
+GİZLİ BİLGİ - SHADOW HIERARCHY:
+- Yeni hesaplar -128 TweetCred skoruyla başlar
+- Minimum +17'ye ulaşmadan erişim neredeyse sıfır
+- İlk 100 post'ta %0.5'ten düşük like/impression = "engagement debt"
+- Engagement debt = postlar sadece %10 dağıtıma girer
+- Grok her postu pozitif/negatif diye değerlendiriyor
+
+MENTION STRATEJİSİ (PARA KAZANMA İÇİN KRİTİK):
+- İnsanları mention'lara çek
+- Mention okuyanlar reklamı görür
+- Reklam gelirinin %30-50'si sana gelir
+- Tartışma başlat → mention trafiği artar
 
 OPTİMAL TWEET YAPISI:
 1. HOOK: İlk cümle dikkat çekici (scroll durdurucu) - DWELL TIME BAŞLAR
 2. MERAK: İkinci kısım merak uyandırmalı - OKUMAYA DEVAM
 3. DEĞER: Okuyucuya somut fayda sağla - DWELL TIME UZAR
 4. FORMAT: Satır araları ile okunabilir - GÖZ YORULMAZ
-5. CTA: Sonunda aksiyon çağrısı - ETKİLEŞİM TETİKLE
+5. CTA: Sonunda aksiyon çağrısı - MENTION'A ÇEK
 
 {"CALL TO ACTION: Sonunda soru sor veya aksiyon iste (örn: 'Ne düşünüyorsunuz?', 'Kaydet', 'Yorumda paylaş')" if include_cta else "Call to action EKLEME"}
 {"EMOJI: Uygun yerlerde 1-3 emoji kullan (abartma, spam görünür)" if include_emoji else "EMOJI KULLANMA"}
