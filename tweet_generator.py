@@ -1282,7 +1282,8 @@ Karmaşıklaştırmayı bırakın.""",
         length: str = "medium",
         include_cta: bool = True,
         include_emoji: bool = True,
-        custom_instructions: str = ""
+        custom_instructions: str = "",
+        language: str = "tr"
     ) -> str:
         """
         Claude AI ile yaratıcı tweet üretir.
@@ -1295,12 +1296,31 @@ Karmaşıklaştırmayı bırakın.""",
             include_cta: Call to action eklensin mi
             include_emoji: Emoji kullanılsın mı
             custom_instructions: Özel talimatlar
+            language: Dil kodu (tr, en, de, fr, es, ar, zh, ja, ko, pt, ru)
 
         Returns:
             Üretilen tweet
         """
         if not self.client:
             return "Claude API bağlantısı yok. ANTHROPIC_API_KEY ayarlayın."
+
+        # Dil ayarları
+        language_config = {
+            "tr": {"name": "Türkçe", "instruction": "Tweet'i Türkçe yaz."},
+            "en": {"name": "English", "instruction": "Write the tweet in English."},
+            "de": {"name": "Deutsch", "instruction": "Write the tweet in German (Deutsch)."},
+            "fr": {"name": "Français", "instruction": "Write the tweet in French (Français)."},
+            "es": {"name": "Español", "instruction": "Write the tweet in Spanish (Español)."},
+            "ar": {"name": "العربية", "instruction": "Write the tweet in Arabic (العربية)."},
+            "zh": {"name": "中文", "instruction": "Write the tweet in Chinese (中文)."},
+            "ja": {"name": "日本語", "instruction": "Write the tweet in Japanese (日本語)."},
+            "ko": {"name": "한국어", "instruction": "Write the tweet in Korean (한국어)."},
+            "pt": {"name": "Português", "instruction": "Write the tweet in Portuguese (Português)."},
+            "ru": {"name": "Русский", "instruction": "Write the tweet in Russian (Русский)."},
+        }
+
+        lang_info = language_config.get(language, language_config["tr"])
+        lang_instruction = lang_info["instruction"]
 
         length_guide = {
             "short": "100-200 karakter",
@@ -1407,6 +1427,8 @@ OPTİMAL TWEET YAPISI:
 4. Özgün ol, şablon gibi görünme
 5. İnsanların paylaşmak isteyeceği değer sun
 
+🌍 DİL: {lang_instruction}
+
 Sadece tweet metnini yaz, başka açıklama ekleme."""
 
         try:
@@ -1425,7 +1447,8 @@ Sadece tweet metnini yaz, başka açıklama ekleme."""
         self,
         topic: str,
         num_tweets: int = 5,
-        style: str = "educational"
+        style: str = "educational",
+        language: str = "tr"
     ) -> List[str]:
         """
         Claude AI ile thread üretir.
@@ -1434,12 +1457,21 @@ Sadece tweet metnini yaz, başka açıklama ekleme."""
             topic: Thread konusu
             num_tweets: Tweet sayısı
             style: Stil
+            language: Dil kodu (tr, en, de, fr, es, ar, zh, ja, ko, pt, ru)
 
         Returns:
             Tweet listesi
         """
         if not self.client:
             return ["Claude API bağlantısı yok. ANTHROPIC_API_KEY ayarlayın."]
+
+        # Dil ayarları
+        language_names = {
+            "tr": "Türkçe", "en": "English", "de": "Deutsch", "fr": "Français",
+            "es": "Español", "ar": "العربية", "zh": "中文", "ja": "日本語",
+            "ko": "한국어", "pt": "Português", "ru": "Русский"
+        }
+        lang_name = language_names.get(language, "Türkçe")
 
         prompt = f"""Sen bir X (Twitter) thread uzmanısın.
 
@@ -1458,6 +1490,8 @@ HER TWEET İÇİN:
 - Link EKLEME
 
 STİL: {style}
+
+🌍 DİL: Thread'i {lang_name} dilinde yaz.
 
 FORMAT: Her tweet'i "---" ile ayır.
 
@@ -1478,19 +1512,28 @@ Sadece thread'i yaz, açıklama ekleme."""
         except Exception as e:
             return [f"Hata: {str(e)}"]
 
-    def rewrite_tweet(self, original: str, style: str = "viral") -> str:
+    def rewrite_tweet(self, original: str, style: str = "viral", language: str = "tr") -> str:
         """
         Mevcut tweet'i daha viral hale getirir.
 
         Args:
             original: Orijinal tweet
             style: Hedef stil (viral, controversial, emotional, educational)
+            language: Dil kodu (tr, en, de, fr, es, ar, zh, ja, ko, pt, ru)
 
         Returns:
             Yeniden yazılmış tweet
         """
         if not self.client:
             return "Claude API bağlantısı yok."
+
+        # Dil ayarları
+        language_names = {
+            "tr": "Türkçe", "en": "English", "de": "Deutsch", "fr": "Français",
+            "es": "Español", "ar": "العربية", "zh": "中文", "ja": "日本語",
+            "ko": "한국어", "pt": "Português", "ru": "Русский"
+        }
+        lang_name = language_names.get(language, "Türkçe")
 
         prompt = f"""Sen bir X içerik editörüsün.
 
@@ -1507,6 +1550,8 @@ KURALLAR:
 - Call to action ekle
 - Hashtag ve link EKLEME
 - Klişe ifadeler KULLANMA
+
+🌍 DİL: Tweet'i {lang_name} dilinde yaz.
 
 Sadece yeni tweet'i yaz."""
 

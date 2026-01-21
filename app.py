@@ -67,6 +67,8 @@ if "country" not in st.session_state:
     st.session_state.country = "TR"
 if "niche" not in st.session_state:
     st.session_state.niche = "genel"
+if "language" not in st.session_state:
+    st.session_state.language = "tr"
 
 # Sidebar - Ayarlar
 with st.sidebar:
@@ -87,6 +89,27 @@ with st.sidebar:
         st.rerun()
 
     is_premium = st.checkbox("X Premium Hesabı", value=True, help="25,000 karakter limiti")
+
+    # Dil seçimi
+    language = st.selectbox(
+        "🌍 Tweet Dili",
+        ["tr", "en", "de", "fr", "es", "ar", "zh", "ja", "ko", "pt", "ru"],
+        format_func=lambda x: {
+            "tr": "🇹🇷 Türkçe",
+            "en": "🇬🇧 English",
+            "de": "🇩🇪 Deutsch",
+            "fr": "🇫🇷 Français",
+            "es": "🇪🇸 Español",
+            "ar": "🇸🇦 العربية",
+            "zh": "🇨🇳 中文",
+            "ja": "🇯🇵 日本語",
+            "ko": "🇰🇷 한국어",
+            "pt": "🇧🇷 Português",
+            "ru": "🇷🇺 Русский"
+        }[x],
+        index=["tr", "en", "de", "fr", "es", "ar", "zh", "ja", "ko", "pt", "ru"].index(st.session_state.language)
+    )
+    st.session_state.language = language
 
     st.markdown("---")
 
@@ -336,7 +359,8 @@ with tab1:
                         length=length,
                         include_cta=include_cta,
                         include_emoji=include_emoji,
-                        custom_instructions=custom_instructions
+                        custom_instructions=custom_instructions,
+                        language=language
                     )
 
                 st.success("Tweet üretildi!")
@@ -790,7 +814,7 @@ with tab5:
         if st.button("🧵 Thread Oluştur", type="primary", use_container_width=True, key="thread_btn"):
             if thread_topic:
                 with st.spinner(f"🧵 {tweet_count} tweet'lik thread üretiliyor..."):
-                    tweets = generator.generate_thread(thread_topic, tweet_count, thread_style)
+                    tweets = generator.generate_thread(thread_topic, tweet_count, thread_style, language)
 
                 st.success(f"{len(tweets)} tweet'lik thread oluşturuldu!")
 
@@ -830,7 +854,7 @@ with tab6:
         if st.button("✨ Yeniden Yaz", type="primary", use_container_width=True, key="rewrite_btn"):
             if original_tweet:
                 with st.spinner("✨ Tweet yeniden yazılıyor..."):
-                    new_tweet = generator.rewrite_tweet(original_tweet, rewrite_style)
+                    new_tweet = generator.rewrite_tweet(original_tweet, rewrite_style, language)
 
                 col1, col2 = st.columns(2)
                 with col1:
