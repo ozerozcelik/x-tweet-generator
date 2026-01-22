@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(python:*)",
+      "WebFetch(domain:x.com)",
+      "WebFetch(domain:xcancel.com)",
+      "WebFetch(domain:syndication.twitter.com)",
+      "Bash(git mv:*)",
+      "WebFetch(domain:twiiit.com)",
+      "WebFetch(domain:nitter.tiekoetter.com)",
+      "WebFetch(domain:alican-kiraz1.medium.com)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "spawner"
+  ]
+}

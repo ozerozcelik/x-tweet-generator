@@ -38,6 +38,13 @@ try:
 except ImportError:
     TWEEPY_AVAILABLE = False
 
+# Requests kütüphanesi (daha güvenilir HTTP client)
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+
 
 class ActionType(Enum):
     """X algoritmasının tahmin ettiği 15 eylem türü"""
@@ -598,17 +605,28 @@ class TweetScraper:
             url = f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{username}"
 
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.5',
                 'Referer': 'https://twitter.com/',
                 'Origin': 'https://twitter.com',
             }
 
-            req = urllib.request.Request(url, headers=headers)
-
-            with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
-                html = self._decompress_response(response)
+            # Requests kütüphanesi varsa onu kullan (daha güvenilir)
+            if REQUESTS_AVAILABLE:
+                try:
+                    resp = requests.get(url, headers=headers, timeout=20, verify=False)
+                    resp.raise_for_status()
+                    html = resp.text
+                except Exception as req_err:
+                    print(f"Requests failed: {req_err}, falling back to urllib")
+                    req = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
+                        html = self._decompress_response(response)
+            else:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
+                    html = self._decompress_response(response)
 
             # JSON data'yı HTML içinden çıkar
             # Syndication API HTML içinde JSON embed eder
@@ -686,10 +704,22 @@ class TweetScraper:
         tweets = []
         try:
             url = f"https://xcancel.com/{username}"
-            req = urllib.request.Request(url, headers=self.headers)
 
-            with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
-                html = self._decompress_response(response)
+            # Requests kütüphanesi varsa onu kullan
+            if REQUESTS_AVAILABLE:
+                try:
+                    resp = requests.get(url, headers=self.headers, timeout=20, verify=False)
+                    resp.raise_for_status()
+                    html = resp.text
+                except Exception as req_err:
+                    print(f"xcancel requests failed: {req_err}")
+                    req = urllib.request.Request(url, headers=self.headers)
+                    with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
+                        html = self._decompress_response(response)
+            else:
+                req = urllib.request.Request(url, headers=self.headers)
+                with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
+                    html = self._decompress_response(response)
 
             # xcancel Nitter tabanlı, aynı HTML yapısını kullanıyor
             tweet_pattern = r'<div class="tweet-content[^"]*"[^>]*>(.*?)</div>'
@@ -818,37 +848,64 @@ class TweetScraper:
         """
         # Kullanıcı adından @ işaretini kaldır
         username = username.lstrip('@').strip()
+        errors = []
 
         # 1. Önce Twitter Syndication API dene (en güvenilir)
-        print(f"Trying Syndication API for @{username}...")
-        tweets = self.fetch_tweets_syndication(username, count)
-        if tweets:
-            print(f"✓ Syndication API: {len(tweets)} tweets found")
-            return tweets
+        print(f"[Scraper] Trying Syndication API for @{username}...")
+        try:
+            tweets = self.fetch_tweets_syndication(username, count)
+            if tweets:
+                print(f"[Scraper] ✓ Syndication API: {len(tweets)} tweets found")
+                return tweets
+            else:
+                errors.append("Syndication API: No tweets returned")
+        except Exception as e:
+            errors.append(f"Syndication API: {str(e)}")
+            print(f"[Scraper] Syndication API error: {e}")
 
         # 2. xcancel.com dene (en güvenilir Nitter alternatifi)
-        print(f"Trying xcancel.com for @{username}...")
-        tweets = self.fetch_tweets_xcancel(username, count)
-        if tweets:
-            print(f"✓ xcancel.com: {len(tweets)} tweets found")
-            return tweets
+        print(f"[Scraper] Trying xcancel.com for @{username}...")
+        try:
+            tweets = self.fetch_tweets_xcancel(username, count)
+            if tweets:
+                print(f"[Scraper] ✓ xcancel.com: {len(tweets)} tweets found")
+                return tweets
+            else:
+                errors.append("xcancel.com: No tweets returned")
+        except Exception as e:
+            errors.append(f"xcancel.com: {str(e)}")
+            print(f"[Scraper] xcancel.com error: {e}")
 
         # 3. RSS feed dene
-        print(f"Trying RSS feeds for @{username}...")
-        tweets = self.fetch_tweets_rss(username, count)
-        if tweets:
-            print(f"✓ RSS: {len(tweets)} tweets found")
-            return tweets
+        print(f"[Scraper] Trying RSS feeds for @{username}...")
+        try:
+            tweets = self.fetch_tweets_rss(username, count)
+            if tweets:
+                print(f"[Scraper] ✓ RSS: {len(tweets)} tweets found")
+                return tweets
+            else:
+                errors.append("RSS: No tweets returned")
+        except Exception as e:
+            errors.append(f"RSS: {str(e)}")
+            print(f"[Scraper] RSS error: {e}")
 
         # 4. Son çare: diğer Nitter alternatifleri
-        print(f"Trying Nitter alternatives for @{username}...")
-        tweets = self.fetch_tweets_nitter(username, count)
-        if tweets:
-            print(f"✓ Nitter: {len(tweets)} tweets found")
-            return tweets
+        print(f"[Scraper] Trying Nitter alternatives for @{username}...")
+        try:
+            tweets = self.fetch_tweets_nitter(username, count)
+            if tweets:
+                print(f"[Scraper] ✓ Nitter: {len(tweets)} tweets found")
+                return tweets
+            else:
+                errors.append("Nitter: No tweets returned")
+        except Exception as e:
+            errors.append(f"Nitter: {str(e)}")
+            print(f"[Scraper] Nitter error: {e}")
 
-        print(f"✗ Could not fetch tweets for @{username}")
-        return tweets
+        print(f"[Scraper] ✗ Could not fetch tweets for @{username}")
+        print(f"[Scraper] Errors: {'; '.join(errors)}")
+        self.last_errors = errors
+        return []
 
     def get_status(self) -> Dict:
         """Scraper durumunu döndür"""
