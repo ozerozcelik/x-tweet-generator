@@ -58,24 +58,59 @@ class ActionType(Enum):
     REPORT = "report"
 
 
-# X Algoritması Ağırlıkları (tahminî değerler - gerçek değerler gizli)
+# ============================================================================
+# X ALGORİTMASI AĞIRLIKLARI (Rust codebase analizi - Ocak 2025)
+# Kaynak: Phoenix WeightedScorer, AuthorDiversityScorer, OONScorer
+# ============================================================================
+
+# Pozitif Sinyaller - Engagement aksiyonları
 ACTION_WEIGHTS = {
-    ActionType.FAVORITE: 1.0,
-    ActionType.REPLY: 1.5,
-    ActionType.REPOST: 2.0,
-    ActionType.QUOTE: 2.5,
-    ActionType.CLICK: 0.3,
-    ActionType.PROFILE_CLICK: 0.5,
-    ActionType.VIDEO_VIEW: 0.8,
-    ActionType.PHOTO_EXPAND: 0.4,
-    ActionType.SHARE: 1.8,
-    ActionType.DWELL: 0.6,
-    ActionType.FOLLOW_AUTHOR: 3.0,
-    ActionType.NOT_INTERESTED: -2.0,
-    ActionType.BLOCK_AUTHOR: -5.0,
-    ActionType.MUTE_AUTHOR: -3.0,
-    ActionType.REPORT: -10.0,
+    # Core engagement (yüksek değerli)
+    ActionType.FAVORITE: 0.5,           # ServerTweetFav
+    ActionType.REPLY: 1.0,              # ServerTweetReply - Yüksek değer (conversation starter)
+    ActionType.REPOST: 1.0,             # ServerTweetRetweet
+    ActionType.QUOTE: 1.0,              # ServerTweetQuote - En değerli (orijinal içerik + amplification)
+
+    # Click aksiyonları (orta değer)
+    ActionType.CLICK: 0.5,              # ClientTweetClick
+    ActionType.PROFILE_CLICK: 1.0,      # ClientTweetClickProfile - Yüksek (discovery)
+    ActionType.PHOTO_EXPAND: 0.5,       # ClientTweetPhotoExpand
+
+    # Video aksiyonları
+    ActionType.VIDEO_VIEW: 0.3,         # ClientTweetVideoQualityView (VQV) - sadece uzun videolar için
+
+    # Share aksiyonları (en değerli - off-platform amplification)
+    ActionType.SHARE: 1.0,              # ClientTweetShare
+    ActionType.DWELL: 0.25,             # ClientTweetRecapDwelled (kısa okuma)
+
+    # Follow - en yüksek değer
+    ActionType.FOLLOW_AUTHOR: 4.0,      # ClientTweetFollowAuthor - Critical signal
+
+    # Negatif sinyaller (skoru düşürür)
+    ActionType.NOT_INTERESTED: -1.0,    # ClientTweetNotInterestedIn
+    ActionType.BLOCK_AUTHOR: -1.0,      # ClientTweetBlockAuthor
+    ActionType.MUTE_AUTHOR: -1.0,       # ClientTweetMuteAuthor
+    ActionType.REPORT: -1.0,            # ClientTweetReport
 }
+
+# Genişletilmiş ağırlıklar (ek sinyaller)
+EXTENDED_WEIGHTS = {
+    "share_via_dm": 1.5,                # DM ile paylaşım - çok değerli (private recommendation)
+    "share_via_copy_link": 1.0,         # Link kopyalama - off-platform share
+    "quoted_click": 0.5,                # Quote tweet'e tıklama
+    "dwell_time_continuous": 0.1,       # Saniye başına dwell time bonus
+    "bookmark": 1.0,                    # Bookmark (tahmini)
+}
+
+# Author Diversity Scorer parametreleri
+AUTHOR_DIVERSITY_DECAY = 0.5           # Her tekrar eden yazar için %50 decay
+AUTHOR_DIVERSITY_FLOOR = 0.1           # Minimum multiplier (asla 0'a düşmez)
+
+# Out-of-Network (OON) adjustment
+OON_WEIGHT_FACTOR = 0.8                # Takip etmediğin kişilerin tweetleri %20 penalty
+
+# Negative score offset (negatif skorları normalize etmek için)
+NEGATIVE_SCORES_OFFSET = 1.0
 
 # X Premium karakter limiti
 MAX_CHARS_STANDARD = 280
@@ -513,31 +548,125 @@ class TweetCredAnalyzer:
 class TweetScraper:
     """
     API gerektirmeden tweet çekme.
-    Nitter instance'ları veya alternatif yöntemler kullanır.
+    Birden fazla yöntem dener: Syndication API, xcancel, Nitter alternatifleri.
     """
 
-    # Çalışan Nitter instance'ları (Ocak 2025 güncel)
-    NITTER_INSTANCES = [
-        "nitter.poast.org",
-        "nitter.net",
-        "nitter.cz",
-        "nitter.kavin.rocks",
+    # Çalışan alternatif instance'lar (Ocak 2025 güncel)
+    # xcancel.com en güvenilir, diğerleri yedek
+    ALTERNATIVE_INSTANCES = [
+        "xcancel.com",
+        "twiiit.com",
         "nitter.privacydev.net",
-        "nitter.woodland.cafe",
-        "nitter.unixfox.eu",
+        "nitter.poast.org",
     ]
 
     def __init__(self):
         self.working_instance = None
+        self.working_method = None
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
         }
 
+    def _decompress_response(self, response) -> str:
+        """Response'u decompress et (gzip desteği)"""
+        import gzip
+        import io
+
+        data = response.read()
+        if response.info().get('Content-Encoding') == 'gzip':
+            try:
+                buf = io.BytesIO(data)
+                with gzip.GzipFile(fileobj=buf) as f:
+                    return f.read().decode('utf-8')
+            except:
+                pass
+        return data.decode('utf-8', errors='ignore')
+
+    def fetch_tweets_syndication(self, username: str, count: int = 50) -> List[Dict]:
+        """
+        Twitter Syndication API üzerinden tweet çek.
+        Bu API herkese açık ve API key gerektirmiyor.
+        """
+        tweets = []
+        try:
+            # Twitter'ın embed/syndication endpoint'i
+            url = f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{username}"
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Referer': 'https://twitter.com/',
+                'Origin': 'https://twitter.com',
+            }
+
+            req = urllib.request.Request(url, headers=headers)
+
+            with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
+                html = self._decompress_response(response)
+
+            # JSON data'yı HTML içinden çıkar
+            # Syndication API HTML içinde JSON embed eder
+            json_pattern = r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>'
+            json_match = re.search(json_pattern, html, re.DOTALL)
+
+            if json_match:
+                try:
+                    data = json.loads(json_match.group(1))
+                    timeline = data.get('props', {}).get('pageProps', {}).get('timeline', {})
+                    entries = timeline.get('entries', [])
+
+                    for entry in entries[:count]:
+                        content = entry.get('content', {})
+                        tweet_data = content.get('tweet', {})
+
+                        if tweet_data:
+                            text = tweet_data.get('full_text', tweet_data.get('text', ''))
+                            if text and len(text) > 10:
+                                tweets.append({
+                                    "text": text,
+                                    "likes": tweet_data.get('favorite_count', 0),
+                                    "retweets": tweet_data.get('retweet_count', 0),
+                                    "replies": tweet_data.get('reply_count', 0),
+                                    "impressions": tweet_data.get('view_count', 100)
+                                })
+                except json.JSONDecodeError:
+                    pass
+
+            # Alternatif: HTML'den direkt parse et
+            if not tweets:
+                # Tweet text pattern
+                tweet_pattern = r'data-tweet-id="[^"]*"[^>]*>.*?<p[^>]*class="[^"]*tweet-text[^"]*"[^>]*>(.*?)</p>'
+                matches = re.findall(tweet_pattern, html, re.DOTALL | re.IGNORECASE)
+
+                for match in matches[:count]:
+                    text = re.sub(r'<[^>]+>', '', match)
+                    text = text.strip()
+                    if text and len(text) > 10:
+                        tweets.append({
+                            "text": text,
+                            "likes": 0,
+                            "retweets": 0,
+                            "replies": 0,
+                            "impressions": 100
+                        })
+
+            if tweets:
+                self.working_method = "Syndication API"
+
+        except Exception as e:
+            print(f"Syndication API error: {e}")
+
+        return tweets
+
     def _find_working_instance(self) -> Optional[str]:
-        """Çalışan bir Nitter instance'ı bul"""
-        for instance in self.NITTER_INSTANCES:
+        """Çalışan bir alternatif instance bul"""
+        for instance in self.ALTERNATIVE_INSTANCES:
             try:
                 url = f"https://{instance}/"
                 req = urllib.request.Request(url, headers=self.headers)
@@ -550,16 +679,46 @@ class TweetScraper:
                 continue
         return None
 
+    def fetch_tweets_xcancel(self, username: str, count: int = 50) -> List[Dict]:
+        """
+        xcancel.com üzerinden tweet çek (en güvenilir Nitter alternatifi).
+        """
+        tweets = []
+        try:
+            url = f"https://xcancel.com/{username}"
+            req = urllib.request.Request(url, headers=self.headers)
+
+            with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
+                html = self._decompress_response(response)
+
+            # xcancel Nitter tabanlı, aynı HTML yapısını kullanıyor
+            tweet_pattern = r'<div class="tweet-content[^"]*"[^>]*>(.*?)</div>'
+            matches = re.findall(tweet_pattern, html, re.DOTALL)
+
+            for match in matches[:count]:
+                text = re.sub(r'<[^>]+>', '', match)
+                text = text.strip()
+
+                if text and len(text) > 10:
+                    tweets.append({
+                        "text": text,
+                        "likes": 0,
+                        "retweets": 0,
+                        "replies": 0,
+                        "impressions": 100
+                    })
+
+            if tweets:
+                self.working_method = "xcancel.com"
+
+        except Exception as e:
+            print(f"xcancel fetch error: {e}")
+
+        return tweets
+
     def fetch_tweets_nitter(self, username: str, count: int = 50) -> List[Dict]:
         """
-        Nitter üzerinden tweet çek.
-
-        Args:
-            username: X kullanıcı adı (@ olmadan)
-            count: Çekilecek tweet sayısı
-
-        Returns:
-            Tweet listesi
+        Nitter alternatifleri üzerinden tweet çek.
         """
         if not self.working_instance:
             self._find_working_instance()
@@ -573,29 +732,27 @@ class TweetScraper:
             req = urllib.request.Request(url, headers=self.headers)
 
             with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
-                html = response.read().decode('utf-8')
+                html = self._decompress_response(response)
 
-            # Basit HTML parsing (BeautifulSoup olmadan)
             # Tweet içeriklerini bul
             tweet_pattern = r'<div class="tweet-content[^"]*"[^>]*>(.*?)</div>'
             matches = re.findall(tweet_pattern, html, re.DOTALL)
 
             for match in matches[:count]:
-                # HTML tag'lerini temizle
                 text = re.sub(r'<[^>]+>', '', match)
                 text = text.strip()
 
                 if text and len(text) > 10:
                     tweets.append({
                         "text": text,
-                        "likes": 0,  # Nitter'dan engagement almak zor
+                        "likes": 0,
                         "retweets": 0,
                         "replies": 0,
                         "impressions": 100
                     })
 
-            # Stats'ları da çekmeye çalış
-            stat_pattern = r'<span class="tweet-stat[^"]*"[^>]*>.*?(\d+)</span>'
+            if tweets:
+                self.working_method = f"Nitter ({self.working_instance})"
 
         except Exception as e:
             print(f"Nitter fetch error: {e}")
@@ -604,72 +761,134 @@ class TweetScraper:
 
     def fetch_tweets_rss(self, username: str, count: int = 50) -> List[Dict]:
         """
-        RSS feed üzerinden tweet çek (Nitter RSS).
+        RSS feed üzerinden tweet çek.
         """
-        if not self.working_instance:
-            self._find_working_instance()
+        # Önce xcancel RSS dene
+        rss_sources = [
+            f"https://xcancel.com/{username}/rss",
+        ]
 
-        if not self.working_instance:
-            return []
+        if self.working_instance:
+            rss_sources.append(f"https://{self.working_instance}/{username}/rss")
 
         tweets = []
-        try:
-            url = f"https://{self.working_instance}/{username}/rss"
-            req = urllib.request.Request(url, headers=self.headers)
+        for rss_url in rss_sources:
+            try:
+                req = urllib.request.Request(rss_url, headers=self.headers)
 
-            with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
-                xml = response.read().decode('utf-8')
+                with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
+                    xml = self._decompress_response(response)
 
-            # Basit RSS parsing
-            # <title> ve <description> tag'lerini bul
-            item_pattern = r'<item>(.*?)</item>'
-            items = re.findall(item_pattern, xml, re.DOTALL)
+                # RSS parsing
+                item_pattern = r'<item>(.*?)</item>'
+                items = re.findall(item_pattern, xml, re.DOTALL)
 
-            for item in items[:count]:
-                # Description içindeki tweet metnini al
-                desc_match = re.search(r'<description>(.*?)</description>', item, re.DOTALL)
-                if desc_match:
-                    text = desc_match.group(1)
-                    # CDATA ve HTML temizle
-                    text = re.sub(r'<!\[CDATA\[', '', text)
-                    text = re.sub(r'\]\]>', '', text)
-                    text = re.sub(r'<[^>]+>', '', text)
-                    text = text.strip()
+                for item in items[:count]:
+                    desc_match = re.search(r'<description>(.*?)</description>', item, re.DOTALL)
+                    if desc_match:
+                        text = desc_match.group(1)
+                        text = re.sub(r'<!\[CDATA\[', '', text)
+                        text = re.sub(r'\]\]>', '', text)
+                        text = re.sub(r'<[^>]+>', '', text)
+                        text = text.strip()
 
-                    if text and len(text) > 10:
-                        tweets.append({
-                            "text": text,
-                            "likes": 0,
-                            "retweets": 0,
-                            "replies": 0,
-                            "impressions": 100
-                        })
+                        if text and len(text) > 10:
+                            tweets.append({
+                                "text": text,
+                                "likes": 0,
+                                "retweets": 0,
+                                "replies": 0,
+                                "impressions": 100
+                            })
 
-        except Exception as e:
-            print(f"RSS fetch error: {e}")
+                if tweets:
+                    self.working_method = "RSS Feed"
+                    break
+
+            except Exception as e:
+                print(f"RSS fetch error ({rss_url}): {e}")
+                continue
 
         return tweets
 
     def fetch_tweets(self, username: str, count: int = 50) -> List[Dict]:
         """
-        Tweet çek - önce RSS dene, sonra HTML scraping.
+        Tweet çek - birden fazla yöntem dener.
+        Sıra: Syndication API -> xcancel -> RSS -> Nitter alternatifleri
         """
-        # Önce RSS dene (daha güvenilir)
+        # Kullanıcı adından @ işaretini kaldır
+        username = username.lstrip('@').strip()
+
+        # 1. Önce Twitter Syndication API dene (en güvenilir)
+        print(f"Trying Syndication API for @{username}...")
+        tweets = self.fetch_tweets_syndication(username, count)
+        if tweets:
+            print(f"✓ Syndication API: {len(tweets)} tweets found")
+            return tweets
+
+        # 2. xcancel.com dene (en güvenilir Nitter alternatifi)
+        print(f"Trying xcancel.com for @{username}...")
+        tweets = self.fetch_tweets_xcancel(username, count)
+        if tweets:
+            print(f"✓ xcancel.com: {len(tweets)} tweets found")
+            return tweets
+
+        # 3. RSS feed dene
+        print(f"Trying RSS feeds for @{username}...")
         tweets = self.fetch_tweets_rss(username, count)
+        if tweets:
+            print(f"✓ RSS: {len(tweets)} tweets found")
+            return tweets
 
-        if not tweets:
-            # RSS başarısızsa HTML scraping dene
-            tweets = self.fetch_tweets_nitter(username, count)
+        # 4. Son çare: diğer Nitter alternatifleri
+        print(f"Trying Nitter alternatives for @{username}...")
+        tweets = self.fetch_tweets_nitter(username, count)
+        if tweets:
+            print(f"✓ Nitter: {len(tweets)} tweets found")
+            return tweets
 
+        print(f"✗ Could not fetch tweets for @{username}")
         return tweets
 
     def get_status(self) -> Dict:
         """Scraper durumunu döndür"""
+        # Tüm yöntemleri test et
+        methods_status = []
+
+        # Syndication API test
+        try:
+            url = "https://syndication.twitter.com/"
+            req = urllib.request.Request(url, headers=self.headers)
+            with urllib.request.urlopen(req, timeout=5, context=SSL_CONTEXT) as response:
+                if response.status == 200:
+                    methods_status.append("Syndication API ✓")
+        except:
+            methods_status.append("Syndication API ✗")
+
+        # xcancel test
+        try:
+            url = "https://xcancel.com/"
+            req = urllib.request.Request(url, headers=self.headers)
+            with urllib.request.urlopen(req, timeout=5, context=SSL_CONTEXT) as response:
+                if response.status == 200:
+                    methods_status.append("xcancel.com ✓")
+        except:
+            methods_status.append("xcancel.com ✗")
+
+        # Nitter alternatifleri test
         instance = self._find_working_instance()
+        if instance:
+            methods_status.append(f"Nitter ({instance}) ✓")
+        else:
+            methods_status.append("Nitter alternatifleri ✗")
+
+        working = any("✓" in m for m in methods_status)
+
         return {
-            "working": instance is not None,
-            "instance": instance,
-            "method": "Nitter (RSS/HTML)"
+            "working": working,
+            "instance": self.working_instance,
+            "method": self.working_method or "Multiple methods available",
+            "methods_status": methods_status
         }
 
 
@@ -1115,30 +1334,87 @@ class XAlgorithmTweetGenerator:
     algoritmanın favori ettiği özellikleri kullanır.
     """
 
-    # Engagement artıran faktörler
+    # ============================================================================
+    # X ALGORİTMASI ENGAGEMENT FAKTÖRLER (Phoenix WeightedScorer analizi)
+    # ============================================================================
+
+    # Engagement artıran faktörler (X algoritması ağırlıklarına göre)
     ENGAGEMENT_BOOSTERS = {
-        "question": 1.3,
-        "call_to_action": 1.2,
-        "controversy": 1.4,
-        "storytelling": 1.25,
-        "thread_hook": 1.35,
-        "visual_content": 1.5,
-        "timely_topic": 1.3,
-        "personal_experience": 1.2,
-        "data_insight": 1.15,
-        "emoji_moderate": 1.1,
-        "line_breaks": 1.1,
-        "long_form_value": 1.2,  # Premium için uzun içerik
+        # Reply tetikleyiciler (en değerli - 1.0 ağırlık)
+        "question": 1.35,               # Soru = Reply olasılığı yüksek
+        "call_to_action": 1.30,         # CTA = Share + Reply tetikler
+        "controversy": 1.40,            # Tartışmalı = Yüksek engagement
+
+        # Storytelling & Thread (Quote ve RT tetikler - 1.0 ağırlık)
+        "storytelling": 1.25,           # Hikaye = Dwell time artırır
+        "thread_hook": 1.45,            # Thread = Follow tetikler (4.0 ağırlık!)
+
+        # Visual content (Photo expand - 0.5 ağırlık)
+        "visual_content": 1.20,         # Görsel = Dwell + Expand
+
+        # Profile click tetikleyiciler (1.0 ağırlık)
+        "personal_experience": 1.25,    # Kişisel hikaye = Profile click
+        "authority_signal": 1.30,       # Otorite gösterimi = Follow
+
+        # Timely content
+        "timely_topic": 1.25,           # Güncel konu = Keşfet görünürlüğü
+
+        # Data & Insight
+        "data_insight": 1.20,           # Veri = Bookmark (share_via_copy)
+
+        # Formatting
+        "emoji_moderate": 1.10,         # 1-5 emoji = Dikkat çekici
+        "line_breaks": 1.15,            # Format = Dwell time
+        "long_form_value": 1.25,        # Uzun içerik = Değerli
+
+        # Share tetikleyiciler (1.0-1.5 ağırlık)
+        "shareable_insight": 1.35,      # Paylaşılabilir içgörü
+        "quotable_line": 1.30,          # Alıntılanabilir cümle
     }
 
-    # Engagement düşüren faktörler
+    # Engagement düşüren faktörler (Negatif sinyaller - X algoritması)
     ENGAGEMENT_PENALTIES = {
-        "external_link": 0.7,
-        "too_many_hashtags": 0.8,
-        "all_caps": 0.85,
-        "spam_keywords": 0.5,
-        "no_engagement_hook": 0.8,
-        "emoji_overload": 0.85,
+        # Kritik cezalar (algoritma direkt bastırır)
+        "external_link": 0.50,          # Dış link = %50 düşüş (ciddi ceza)
+        "spam_keywords": 0.30,          # Spam = %70 düşüş
+
+        # Orta cezalar
+        "too_many_hashtags": 0.70,      # 3+ hashtag = Spam görünümü
+        "all_caps": 0.75,               # Büyük harf = Agresif
+        "emoji_overload": 0.80,         # 10+ emoji = Spam
+        "no_engagement_hook": 0.85,     # Hook yok = Düşük etkileşim
+
+        # Hafif cezalar
+        "repetitive_content": 0.90,     # Tekrar = Düşük değer
+        "low_effort": 0.85,             # Az emek = Düşük kalite
+
+        # Negatif sinyal tetikleyiciler (block/mute/report riski)
+        "aggressive_tone": 0.70,        # Saldırgan ton = Block riski
+        "misleading_content": 0.60,     # Yanıltıcı = Report riski
+    }
+
+    # Phoenix Multi-Action Prediction Ağırlıkları
+    # (X'in gerçek weighted scorer'ından)
+    PHOENIX_WEIGHTS = {
+        "favorite": 0.5,
+        "reply": 1.0,
+        "retweet": 1.0,
+        "quote": 1.0,
+        "click": 0.5,
+        "profile_click": 1.0,
+        "photo_expand": 0.5,
+        "video_quality_view": 0.3,
+        "share": 1.0,
+        "share_via_dm": 1.5,
+        "share_via_copy_link": 1.0,
+        "dwell": 0.25,
+        "dwell_time_continuous": 0.1,
+        "follow_author": 4.0,  # En yüksek!
+        # Negatif
+        "not_interested": -1.0,
+        "block_author": -1.0,
+        "mute_author": -1.0,
+        "report": -1.0,
     }
 
     # Genişletilmiş viral tweet şablonları
@@ -1441,6 +1717,103 @@ Karmaşıklaştırmayı bırakın.""",
         self.profile_analyzer = XProfileAnalyzer(bearer_token=x_bearer_token)
         self.current_profile: Optional[XProfile] = None
 
+    def calculate_phoenix_score(self, action_predictions: Dict[str, float]) -> Dict[str, any]:
+        """
+        Phoenix Weighted Scorer - X algoritmasının gerçek puanlama sistemi.
+
+        X'in Rust codebase'inden alınan ağırlıklarla weighted score hesaplar.
+
+        Args:
+            action_predictions: Her aksiyon için tahmin edilen olasılıklar
+                {"favorite": 0.5, "reply": 0.3, "retweet": 0.2, ...}
+
+        Returns:
+            {
+                "weighted_score": float,  # Toplam ağırlıklı skor
+                "action_contributions": dict,  # Her aksiyonun katkısı
+                "positive_sum": float,  # Pozitif sinyaller toplamı
+                "negative_sum": float,  # Negatif sinyaller toplamı
+                "normalized_score": float,  # 0-100 arası normalize skor
+            }
+        """
+        weighted_sum = 0.0
+        positive_sum = 0.0
+        negative_sum = 0.0
+        contributions = {}
+
+        for action, weight in self.PHOENIX_WEIGHTS.items():
+            prediction = action_predictions.get(action, 0.0)
+            contribution = prediction * weight
+            contributions[action] = contribution
+
+            if weight > 0:
+                positive_sum += contribution
+            else:
+                negative_sum += abs(contribution)
+
+            weighted_sum += contribution
+
+        # Negatif skor offset (X algoritmasından)
+        if weighted_sum < 0:
+            # Negatif skorları normalize et
+            total_negative_weights = sum(abs(w) for w in self.PHOENIX_WEIGHTS.values() if w < 0)
+            weighted_sum = (weighted_sum + total_negative_weights) / total_negative_weights * NEGATIVE_SCORES_OFFSET
+        else:
+            weighted_sum += NEGATIVE_SCORES_OFFSET
+
+        # 0-100 arası normalize et
+        max_possible = sum(w for w in self.PHOENIX_WEIGHTS.values() if w > 0)
+        normalized = min(100, max(0, (weighted_sum / max_possible) * 100))
+
+        return {
+            "weighted_score": round(weighted_sum, 4),
+            "action_contributions": contributions,
+            "positive_sum": round(positive_sum, 4),
+            "negative_sum": round(negative_sum, 4),
+            "normalized_score": round(normalized, 1),
+        }
+
+    def calculate_author_diversity_penalty(
+        self,
+        author_position: int,
+        decay_factor: float = AUTHOR_DIVERSITY_DECAY,
+        floor: float = AUTHOR_DIVERSITY_FLOOR
+    ) -> float:
+        """
+        Author Diversity Scorer - Aynı yazarın tekrarlayan içeriğini cezalandırır.
+
+        X algoritması, aynı yazardan art arda gelen tweetleri cezalandırır.
+        İlk tweet: 1.0x, İkinci: 0.5x, Üçüncü: 0.25x, ... minimum: 0.1x
+
+        Args:
+            author_position: Yazarın kaçıncı tweet'i (0-indexed)
+            decay_factor: Her tekrar için decay oranı (default: 0.5)
+            floor: Minimum multiplier (default: 0.1)
+
+        Returns:
+            Diversity multiplier (0.1 - 1.0 arası)
+        """
+        # Formül: (1.0 - floor) * decay^position + floor
+        multiplier = (1.0 - floor) * (decay_factor ** author_position) + floor
+        return round(multiplier, 3)
+
+    def calculate_oon_adjustment(self, base_score: float, is_in_network: bool) -> float:
+        """
+        Out-of-Network Adjustment - Takip etmediğin kişilerin içeriğini ayarla.
+
+        X algoritması, takip etmediğin kişilerin içeriklerine %20 penalty uygular.
+
+        Args:
+            base_score: Temel skor
+            is_in_network: Kullanıcı takip edilenler arasında mı
+
+        Returns:
+            Ayarlanmış skor
+        """
+        if not is_in_network:
+            return base_score * OON_WEIGHT_FACTOR
+        return base_score
+
     def analyze_tweet(self, tweet: str) -> TweetAnalysis:
         """
         Tweet'i X algoritmasına göre analiz eder.
@@ -1649,18 +2022,58 @@ Karmaşıklaştırmayı bırakın.""",
         # Skoru 0-100 arasında sınırla
         score = max(0, min(100, score))
 
-        # Engagement tahminleri
-        engagement_prediction["favorite"] = min(score / 150, 0.85)
-        engagement_prediction["repost"] = min(score / 200, 0.6)
-        engagement_prediction["quote"] = min(score / 250, 0.4)
-        engagement_prediction["bookmark"] = min(score / 180, 0.5)
+        # ============================================================================
+        # PHOENIX-STYLE ENGAGEMENT PREDICTION (X Algoritması Ağırlıkları)
+        # ============================================================================
+
+        # Base engagement olasılıkları (skor bazlı)
+        base_engagement = score / 100
+
+        # Her aksiyon için özel tahminler
+        # Soru varsa reply yüksek
+        reply_boost = 1.5 if "?" in tweet else 1.0
+        # CTA varsa share/bookmark yüksek
+        share_boost = 1.3 if has_cta else 1.0
+        # Thread ise follow yüksek
+        follow_boost = 1.5 if ("🧵" in tweet or "thread" in tweet_lower) else 1.0
+        # Görsel referansı varsa photo_expand yüksek
+        visual_boost = 1.3 if any(w in tweet_lower for w in ["fotoğraf", "görsel", "image", "pic", "📷", "🖼"]) else 1.0
+        # Uzun içerik varsa dwell yüksek
+        dwell_boost = 1.4 if char_count > 200 else 1.0
+
+        # Phoenix-style action predictions
+        engagement_prediction = {
+            # Pozitif aksiyonlar (ağırlıklara göre sıralı)
+            "follow_author": min(base_engagement * 0.15 * follow_boost, 0.30),  # En değerli (4.0 ağırlık)
+            "share_via_dm": min(base_engagement * 0.20 * share_boost, 0.35),    # 1.5 ağırlık
+            "reply": min(base_engagement * 0.35 * reply_boost, 0.70),           # 1.0 ağırlık
+            "retweet": min(base_engagement * 0.30, 0.55),                       # 1.0 ağırlık
+            "quote": min(base_engagement * 0.25, 0.45),                         # 1.0 ağırlık
+            "share": min(base_engagement * 0.30 * share_boost, 0.50),           # 1.0 ağırlık
+            "profile_click": min(base_engagement * 0.40, 0.65),                 # 1.0 ağırlık
+            "favorite": min(base_engagement * 0.60, 0.85),                      # 0.5 ağırlık (en yaygın)
+            "click": min(base_engagement * 0.50, 0.75),                         # 0.5 ağırlık
+            "photo_expand": min(base_engagement * 0.35 * visual_boost, 0.55),   # 0.5 ağırlık
+            "bookmark": min(base_engagement * 0.25 * share_boost, 0.45),        # Tahmini
+            "dwell": min(base_engagement * 0.70 * dwell_boost, 0.90),           # 0.25 ağırlık
+
+            # Negatif aksiyonlar (düşük olmalı)
+            "not_interested": max(0.02, (1 - base_engagement) * 0.15),
+            "mute_author": max(0.01, (1 - base_engagement) * 0.08),
+            "block_author": max(0.005, (1 - base_engagement) * 0.05),
+            "report": max(0.001, (1 - base_engagement) * 0.02),
+        }
+
+        # Phoenix weighted score hesapla
+        phoenix_result = self.calculate_phoenix_score(engagement_prediction)
 
         return TweetAnalysis(
             score=round(score, 1),
             strengths=strengths,
             weaknesses=weaknesses,
             suggestions=suggestions,
-            engagement_prediction=engagement_prediction
+            engagement_prediction=engagement_prediction,
+            profile_boost=phoenix_result["normalized_score"] / 100  # Phoenix score'u profile_boost olarak kullan
         )
 
     def generate_with_ai(

@@ -494,6 +494,40 @@ with tab2:
                 </div>
                 """, unsafe_allow_html=True)
 
+                # Phoenix Score (X Algoritması)
+                phoenix_score = analysis.profile_boost * 100
+                st.markdown("---")
+                st.subheader("🔥 Phoenix Score")
+                st.caption("X'in gerçek weighted scorer algoritması")
+
+                phoenix_color = "🟢" if phoenix_score >= 60 else "🟡" if phoenix_score >= 40 else "🔴"
+                st.metric(
+                    "Weighted Score",
+                    f"{phoenix_score:.1f}/100",
+                    help="X algoritmasının 18+ action prediction'ı kullanarak hesapladığı skor"
+                )
+
+                # En değerli engagement tahminleri
+                if analysis.engagement_prediction:
+                    st.markdown("---")
+                    st.subheader("📊 Action Predictions")
+                    st.caption("X algoritması ağırlıkları (Phoenix WeightedScorer)")
+
+                    # En yüksek değerli aksiyonları göster
+                    high_value_actions = [
+                        ("follow_author", "👤 Follow", "4.0x"),
+                        ("share_via_dm", "📩 DM Share", "1.5x"),
+                        ("reply", "💬 Reply", "1.0x"),
+                        ("retweet", "🔄 RT", "1.0x"),
+                        ("quote", "💭 Quote", "1.0x"),
+                    ]
+
+                    for key, label, weight in high_value_actions:
+                        pred = analysis.engagement_prediction.get(key, 0)
+                        bar_width = int(pred * 100)
+                        st.markdown(f"**{label}** ({weight}): {pred:.1%}")
+                        st.progress(min(pred, 1.0))
+
                 st.markdown("---")
 
                 # Reach tahmini
@@ -606,12 +640,19 @@ with tab3:
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔍 Bağlantıyı Test Et", key="test_scraper_btn"):
-                with st.spinner("Nitter bağlantısı test ediliyor..."):
+                with st.spinner("Scraper bağlantıları test ediliyor..."):
                     status = scraper.get_status()
                     if status["working"]:
-                        st.success(f"✅ Bağlantı OK: {status['instance']}")
+                        st.success(f"✅ Bağlantı OK!")
+                        # Detaylı durum göster
+                        if "methods_status" in status:
+                            for method_status in status["methods_status"]:
+                                if "✓" in method_status:
+                                    st.caption(f"  {method_status}")
+                                else:
+                                    st.caption(f"  {method_status}")
                     else:
-                        st.error("❌ Hiçbir Nitter instance'ı çalışmıyor. Manuel yapıştırma kullanın.")
+                        st.error("❌ Hiçbir scraping yöntemi çalışmıyor. Manuel yapıştırma kullanın.")
 
         with col2:
             if st.button("🔄 Tweetleri Çek", type="primary", key="fetch_tweets_btn"):
@@ -631,9 +672,10 @@ with tab3:
                         else:
                             st.error("""
                             Tweet çekilemedi. Olası sebepler:
-                            - Nitter instance'ları geçici olarak kapalı
+                            - Tüm scraping yöntemleri şu an çalışmıyor
                             - Kullanıcı adı hatalı
                             - Hesap private
+                            - Rate limit aşıldı
 
                             **Alternatif:** Manuel yapıştırma kullanın.
                             """)
@@ -642,9 +684,9 @@ with tab3:
 
         st.markdown("---")
         st.caption("""
-        **Not:** Bu özellik Nitter (Twitter'ın açık kaynak aynası) kullanır.
-        Engagement verileri (like, RT) bu yöntemle alınamaz.
-        Daha detaylı analiz için manuel yapıştırma tercih edin.
+        **Not:** Bu özellik birden fazla yöntem dener: Twitter Syndication API, xcancel.com, RSS feeds.
+        Bazı yöntemlerle engagement verileri (like, RT) alınabilir.
+        En detaylı analiz için manuel yapıştırma da kullanabilirsiniz.
         """)
 
     # Analiz sonuçlarını göster
