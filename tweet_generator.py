@@ -45,6 +45,13 @@ try:
 except ImportError:
     REQUESTS_AVAILABLE = False
 
+# ntscraper kütüphanesi (Nitter tabanlı scraper)
+try:
+    from ntscraper import Nitter
+    NTSCRAPER_AVAILABLE = True
+except ImportError:
+    NTSCRAPER_AVAILABLE = False
+
 
 class ActionType(Enum):
     """X algoritmasının tahmin ettiği 15 eylem türü"""
@@ -841,10 +848,46 @@ class TweetScraper:
 
         return tweets
 
+    def fetch_tweets_ntscraper(self, username: str, count: int = 50) -> List[Dict]:
+        """
+        ntscraper kütüphanesi ile tweet çek.
+        Nitter instance'larını otomatik yönetir.
+        """
+        if not NTSCRAPER_AVAILABLE:
+            return []
+
+        tweets = []
+        try:
+            # ntscraper instance'ı oluştur
+            scraper = Nitter(log_level=0, skip_instance_check=False)
+
+            # Profil tweetlerini çek
+            result = scraper.get_tweets(username, mode='user', number=count)
+
+            if result and 'tweets' in result:
+                for tweet in result['tweets'][:count]:
+                    text = tweet.get('text', '')
+                    if text and len(text) > 10:
+                        tweets.append({
+                            "text": text,
+                            "likes": tweet.get('stats', {}).get('likes', 0),
+                            "retweets": tweet.get('stats', {}).get('retweets', 0),
+                            "replies": tweet.get('stats', {}).get('comments', 0),
+                            "impressions": tweet.get('stats', {}).get('likes', 0) * 10 or 100
+                        })
+
+            if tweets:
+                self.working_method = "ntscraper"
+
+        except Exception as e:
+            print(f"ntscraper error: {e}")
+
+        return tweets
+
     def fetch_tweets(self, username: str, count: int = 50) -> List[Dict]:
         """
         Tweet çek - birden fazla yöntem dener.
-        Sıra: Syndication API -> xcancel -> RSS -> Nitter alternatifleri
+        Sıra: Syndication API -> xcancel -> ntscraper -> RSS -> Nitter alternatifleri
         """
         # Kullanıcı adından @ işaretini kaldır
         username = username.lstrip('@').strip()
@@ -855,7 +898,7 @@ class TweetScraper:
         try:
             tweets = self.fetch_tweets_syndication(username, count)
             if tweets:
-                print(f"[Scraper] ✓ Syndication API: {len(tweets)} tweets found")
+                print(f"[Scraper] [OK] Syndication API: {len(tweets)} tweets found")
                 return tweets
             else:
                 errors.append("Syndication API: No tweets returned")
@@ -868,7 +911,7 @@ class TweetScraper:
         try:
             tweets = self.fetch_tweets_xcancel(username, count)
             if tweets:
-                print(f"[Scraper] ✓ xcancel.com: {len(tweets)} tweets found")
+                print(f"[Scraper] [OK] xcancel.com: {len(tweets)} tweets found")
                 return tweets
             else:
                 errors.append("xcancel.com: No tweets returned")
@@ -876,12 +919,26 @@ class TweetScraper:
             errors.append(f"xcancel.com: {str(e)}")
             print(f"[Scraper] xcancel.com error: {e}")
 
-        # 3. RSS feed dene
+        # 3. ntscraper dene (kendi Nitter instance yönetimi var)
+        if NTSCRAPER_AVAILABLE:
+            print(f"[Scraper] Trying ntscraper for @{username}...")
+            try:
+                tweets = self.fetch_tweets_ntscraper(username, count)
+                if tweets:
+                    print(f"[Scraper] [OK] ntscraper: {len(tweets)} tweets found")
+                    return tweets
+                else:
+                    errors.append("ntscraper: No tweets returned")
+            except Exception as e:
+                errors.append(f"ntscraper: {str(e)}")
+                print(f"[Scraper] ntscraper error: {e}")
+
+        # 4. RSS feed dene
         print(f"[Scraper] Trying RSS feeds for @{username}...")
         try:
             tweets = self.fetch_tweets_rss(username, count)
             if tweets:
-                print(f"[Scraper] ✓ RSS: {len(tweets)} tweets found")
+                print(f"[Scraper] [OK] RSS: {len(tweets)} tweets found")
                 return tweets
             else:
                 errors.append("RSS: No tweets returned")
@@ -889,12 +946,12 @@ class TweetScraper:
             errors.append(f"RSS: {str(e)}")
             print(f"[Scraper] RSS error: {e}")
 
-        # 4. Son çare: diğer Nitter alternatifleri
+        # 5. Son çare: diğer Nitter alternatifleri
         print(f"[Scraper] Trying Nitter alternatives for @{username}...")
         try:
             tweets = self.fetch_tweets_nitter(username, count)
             if tweets:
-                print(f"[Scraper] ✓ Nitter: {len(tweets)} tweets found")
+                print(f"[Scraper] [OK] Nitter: {len(tweets)} tweets found")
                 return tweets
             else:
                 errors.append("Nitter: No tweets returned")
@@ -902,7 +959,7 @@ class TweetScraper:
             errors.append(f"Nitter: {str(e)}")
             print(f"[Scraper] Nitter error: {e}")
 
-        print(f"[Scraper] ✗ Could not fetch tweets for @{username}")
+        print(f"[Scraper] [FAIL] Could not fetch tweets for @{username}")
         print(f"[Scraper] Errors: {'; '.join(errors)}")
         self.last_errors = errors
         return []
@@ -918,9 +975,9 @@ class TweetScraper:
             req = urllib.request.Request(url, headers=self.headers)
             with urllib.request.urlopen(req, timeout=5, context=SSL_CONTEXT) as response:
                 if response.status == 200:
-                    methods_status.append("Syndication API ✓")
+                    methods_status.append("Syndication API [OK]")
         except:
-            methods_status.append("Syndication API ✗")
+            methods_status.append("Syndication API [FAIL]")
 
         # xcancel test
         try:
@@ -928,18 +985,28 @@ class TweetScraper:
             req = urllib.request.Request(url, headers=self.headers)
             with urllib.request.urlopen(req, timeout=5, context=SSL_CONTEXT) as response:
                 if response.status == 200:
-                    methods_status.append("xcancel.com ✓")
+                    methods_status.append("xcancel.com [OK]")
         except:
-            methods_status.append("xcancel.com ✗")
+            methods_status.append("xcancel.com [FAIL]")
+
+        # ntscraper test
+        if NTSCRAPER_AVAILABLE:
+            try:
+                scraper = Nitter(log_level=0, skip_instance_check=True)
+                methods_status.append("ntscraper [OK]")
+            except:
+                methods_status.append("ntscraper [FAIL]")
+        else:
+            methods_status.append("ntscraper (not installed)")
 
         # Nitter alternatifleri test
         instance = self._find_working_instance()
         if instance:
-            methods_status.append(f"Nitter ({instance}) ✓")
+            methods_status.append(f"Nitter ({instance}) [OK]")
         else:
-            methods_status.append("Nitter alternatifleri ✗")
+            methods_status.append("Nitter alternatifleri [FAIL]")
 
-        working = any("✓" in m for m in methods_status)
+        working = any("[OK]" in m for m in methods_status)
 
         return {
             "working": working,
@@ -1280,7 +1347,7 @@ class XProfileAnalyzer:
 
         # Verified badge
         if profile.verified:
-            analysis["strengths"].append("Doğrulanmış hesap ✓")
+            analysis["strengths"].append("Doğrulanmış hesap [OK]")
             analysis["tier_multiplier"] *= 1.2
 
         # Metrikleri kaydet
@@ -2237,7 +2304,7 @@ STRATEJİ:
 
             if is_verified:
                 profile_strategy += """
-✓ VERİFİED AVANTAJI:
+[OK] VERİFİED AVANTAJI:
 - TweetCred +100 boost → Daha geniş dağıtım
 - Duplicate content'te %30 muafiyet
 - Daha cesur ve tartışmalı olabilirsin
