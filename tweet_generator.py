@@ -159,6 +159,85 @@ GLOBAL_PROFITABLE_NICHES = [
     "marketing", "business", "entrepreneurship"
 ]
 
+# ============================================================================
+# TWEET ZAMANLAMA OPTİMİZASYONU (Twitter Analytics verilerine dayalı)
+# ============================================================================
+
+# Saat bazlı engagement multiplier (UTC+3 Türkiye saati)
+# 1.0 = ortalama, >1.0 = yüksek engagement, <1.0 = düşük engagement
+HOURLY_ENGAGEMENT_MULTIPLIERS = {
+    0: 0.4,   # 00:00 - Gece yarısı (çok düşük)
+    1: 0.3,   # 01:00
+    2: 0.2,   # 02:00
+    3: 0.2,   # 03:00
+    4: 0.2,   # 04:00
+    5: 0.3,   # 05:00
+    6: 0.5,   # 06:00 - Sabah uyanış
+    7: 0.7,   # 07:00
+    8: 0.9,   # 08:00 - İş başlangıcı
+    9: 1.1,   # 09:00 - Prime time başlangıcı
+    10: 1.2,  # 10:00
+    11: 1.3,  # 11:00 - Öğle öncesi peak
+    12: 1.4,  # 12:00 - ÖĞLE PEAK
+    13: 1.3,  # 13:00
+    14: 1.1,  # 14:00
+    15: 1.0,  # 15:00
+    16: 1.0,  # 16:00
+    17: 1.1,  # 17:00 - İş çıkışı
+    18: 1.3,  # 18:00 - AKŞAM PEAK
+    19: 1.4,  # 19:00 - EN YÜKSEK
+    20: 1.3,  # 20:00
+    21: 1.2,  # 21:00
+    22: 0.9,  # 22:00
+    23: 0.6,  # 23:00
+}
+
+# Gün bazlı engagement multiplier
+# Pazartesi=0, Pazar=6
+DAILY_ENGAGEMENT_MULTIPLIERS = {
+    0: 0.9,   # Pazartesi - Hafta başı yoğunluğu
+    1: 1.0,   # Salı - Normal
+    2: 1.1,   # Çarşamba - Peak gün
+    3: 1.1,   # Perşembe - Peak gün
+    4: 1.0,   # Cuma - Hafta sonu öncesi
+    5: 0.8,   # Cumartesi - Düşük
+    6: 0.7,   # Pazar - En düşük
+}
+
+# Tweet içerik tipi multiplier'ları
+CONTENT_TYPE_MULTIPLIERS = {
+    "text_only": 1.0,           # Sadece metin
+    "with_image": 1.5,          # Görsel içerik +50%
+    "with_video": 2.0,          # Video içerik +100%
+    "with_poll": 1.8,           # Anket +80%
+    "with_link": 0.8,           # Harici link -20% (Twitter linki sevmez)
+    "thread": 1.3,              # Thread +30%
+    "reply": 0.6,               # Reply düşük reach
+    "quote": 1.2,               # Quote tweet +20%
+}
+
+# Optimal posting saatleri (Türkiye için)
+OPTIMAL_POSTING_HOURS_TR = [
+    {"hour": 12, "day_range": "weekday", "description": "Öğle molası", "score": 95},
+    {"hour": 19, "day_range": "weekday", "description": "Akşam prime time", "score": 100},
+    {"hour": 9, "day_range": "weekday", "description": "İş başlangıcı", "score": 85},
+    {"hour": 18, "day_range": "weekday", "description": "İş çıkışı", "score": 90},
+    {"hour": 21, "day_range": "all", "description": "Gece scrolling", "score": 80},
+    {"hour": 11, "day_range": "weekend", "description": "Hafta sonu brunch", "score": 75},
+]
+
+# Viral potansiyel faktörleri
+VIRAL_FACTORS = {
+    "controversial_topic": 2.5,    # Tartışmalı konu
+    "breaking_news": 3.0,          # Son dakika haberi
+    "trending_hashtag": 2.0,       # Trend hashtag kullanımı
+    "celebrity_mention": 2.0,      # Ünlü mention
+    "humor": 1.8,                  # Mizah içerik
+    "relatable": 1.5,              # İlişkilendirilebilir içerik
+    "educational": 1.3,            # Eğitici içerik
+    "personal_story": 1.4,         # Kişisel hikaye
+}
+
 
 @dataclass
 class TweetAnalysis:
@@ -1362,43 +1441,318 @@ class XProfileAnalyzer:
 
         return analysis
 
-    def calculate_reach_prediction(self, profile: XProfile, tweet_score: float) -> Dict[str, int]:
+    def calculate_reach_prediction(
+        self,
+        profile: XProfile,
+        tweet_score: float,
+        posting_hour: Optional[int] = None,
+        posting_day: Optional[int] = None,
+        content_type: str = "text_only",
+        has_trending_hashtag: bool = False,
+        tweetcred_score: Optional[int] = None
+    ) -> Dict[str, any]:
         """
-        Profil ve tweet skoruna göre tahmini reach hesaplar.
+        Gerçekçi reach tahmini hesaplar.
+
+        Faktörler:
+        - Takipçi sayısı ve tier
+        - Tweet kalite skoru
+        - Posting zamanı (saat ve gün)
+        - İçerik tipi (media, thread, vb.)
+        - TweetCred skoru (hesap otoritesi)
+        - Viral potansiyel
 
         Args:
             profile: XProfile objesi
             tweet_score: Tweet analiz skoru (0-100)
+            posting_hour: Tweet atılacak saat (0-23, None = şu anki saat)
+            posting_day: Tweet atılacak gün (0=Pazartesi, 6=Pazar, None = bugün)
+            content_type: İçerik tipi (text_only, with_image, with_video, vb.)
+            has_trending_hashtag: Trend hashtag kullanılıyor mu
+            tweetcred_score: TweetCred skoru (None = tahmin et)
 
         Returns:
-            Tahmini reach metrikleri
+            Detaylı reach tahmini
         """
-        base_reach = profile.followers_count
+        from datetime import datetime
 
-        # Tweet skoru çarpanı
-        score_multiplier = tweet_score / 100
+        # Varsayılan değerler
+        now = datetime.now()
+        if posting_hour is None:
+            posting_hour = now.hour
+        if posting_day is None:
+            posting_day = now.weekday()
 
-        # Tier çarpanı (engagement rate)
-        tier_mult = self.TIER_MULTIPLIERS[profile.engagement_tier]
+        # ============ BASE REACH HESAPLAMA ============
+        base_followers = profile.followers_count
 
-        # Tahmini metrikler
-        impressions = int(base_reach * score_multiplier * 2)  # Takipçilerin 2x'i kadar
-        engagements = int(impressions * tier_mult * 0.05)  # %5 base engagement
-        likes = int(engagements * 0.6)
-        retweets = int(engagements * 0.15)
-        replies = int(engagements * 0.1)
-        bookmarks = int(engagements * 0.1)
-        profile_visits = int(engagements * 0.05)
+        # X algoritması: Organik reach = takipçilerin %5-15'i (tier'a bağlı)
+        organic_reach_rate = {
+            "mega": 0.03,     # 1M+ hesaplar sadece %3
+            "macro": 0.05,    # 100K+ %5
+            "mid": 0.08,      # 10K+ %8
+            "micro": 0.12,    # 1K+ %12
+            "nano": 0.15,     # 100+ %15
+            "starter": 0.20   # <100 %20 (ama düşük sayılar)
+        }
+
+        base_organic_rate = organic_reach_rate.get(profile.engagement_tier, 0.10)
+        base_reach = int(base_followers * base_organic_rate)
+
+        # ============ MULTIPLIER'LAR ============
+
+        # 1. Tweet kalite skoru (0-100 -> 0.5-1.5 multiplier)
+        quality_mult = 0.5 + (tweet_score / 100)
+
+        # 2. Saat multiplier'ı
+        hour_mult = HOURLY_ENGAGEMENT_MULTIPLIERS.get(posting_hour, 1.0)
+
+        # 3. Gün multiplier'ı
+        day_mult = DAILY_ENGAGEMENT_MULTIPLIERS.get(posting_day, 1.0)
+
+        # 4. İçerik tipi multiplier'ı
+        content_mult = CONTENT_TYPE_MULTIPLIERS.get(content_type, 1.0)
+
+        # 5. TweetCred multiplier (hesap otoritesi)
+        if tweetcred_score is None:
+            # Basit tahmin: verified +50, takipçi oranına göre +/-
+            estimated_cred = -128 + (100 if profile.verified else 0)
+            if profile.follower_ratio > 2:
+                estimated_cred += 30
+            if profile.tweet_count > 1000:
+                estimated_cred += 20
+            tweetcred_score = estimated_cred
+
+        # TweetCred -> multiplier dönüşümü
+        if tweetcred_score >= 50:
+            cred_mult = 1.5
+        elif tweetcred_score >= 17:
+            cred_mult = 1.0
+        elif tweetcred_score >= -50:
+            cred_mult = 0.5
+        else:
+            cred_mult = 0.1  # Cold start suppression
+
+        # 6. Viral potansiyel
+        viral_mult = 1.0
+        if has_trending_hashtag:
+            viral_mult *= VIRAL_FACTORS.get("trending_hashtag", 2.0)
+
+        # ============ TOPLAM REACH HESAPLAMA ============
+
+        # Tüm multiplier'ları birleştir
+        total_mult = quality_mult * hour_mult * day_mult * content_mult * cred_mult * viral_mult
+
+        # Algoritmik boost potansiyeli (For You'da görünme)
+        # Yüksek engagement ilk 30 dakikada -> boost
+        foryou_boost = 1.0
+        if total_mult > 1.5:
+            foryou_boost = 1.5  # For You'da görünme şansı
+        elif total_mult > 1.2:
+            foryou_boost = 1.2
+
+        # Final impressions
+        impressions = int(base_reach * total_mult * foryou_boost)
+
+        # Minimum 10, maksimum takipçi * 10 (viral limit)
+        impressions = max(10, min(impressions, base_followers * 10))
+
+        # ============ ENGAGEMENT TAHMİNİ ============
+
+        # Base engagement rate (tier'a göre)
+        tier_engagement_rate = {
+            "mega": 0.01,     # %1
+            "macro": 0.02,    # %2
+            "mid": 0.03,      # %3
+            "micro": 0.05,    # %5
+            "nano": 0.08,     # %8
+            "starter": 0.10   # %10
+        }
+
+        base_eng_rate = tier_engagement_rate.get(profile.engagement_tier, 0.03)
+
+        # Kalite ve zamanlamaya göre engagement artışı
+        adjusted_eng_rate = base_eng_rate * (quality_mult * 0.7 + 0.3)
+
+        engagements = int(impressions * adjusted_eng_rate)
+
+        # Engagement dağılımı (X algorithm analytics'e dayalı)
+        likes = int(engagements * 0.55)           # %55 like
+        retweets = int(engagements * 0.08)        # %8 retweet
+        replies = int(engagements * 0.12)         # %12 reply
+        bookmarks = int(engagements * 0.15)       # %15 bookmark
+        quotes = int(engagements * 0.03)          # %3 quote
+        profile_visits = int(engagements * 0.07)  # %7 profil ziyareti
+
+        # ============ ZAMANLAMA ANALİZİ ============
+
+        # Optimal saat kontrolü
+        optimal_score = int(hour_mult * day_mult * 50)  # 0-100 arası
+
+        if hour_mult >= 1.3:
+            timing_quality = "Mukemmel"
+        elif hour_mult >= 1.0:
+            timing_quality = "Iyi"
+        elif hour_mult >= 0.7:
+            timing_quality = "Orta"
+        else:
+            timing_quality = "Zayif"
+
+        # En iyi alternatif saatler
+        best_hours = sorted(
+            HOURLY_ENGAGEMENT_MULTIPLIERS.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:3]
 
         return {
+            # Temel metrikler
             "impressions": impressions,
             "engagements": engagements,
             "likes": likes,
             "retweets": retweets,
             "replies": replies,
             "bookmarks": bookmarks,
+            "quotes": quotes,
             "profile_visits": profile_visits,
-            "engagement_rate": round((engagements / max(impressions, 1)) * 100, 2)
+            "engagement_rate": round((engagements / max(impressions, 1)) * 100, 2),
+
+            # Multiplier detayları
+            "multipliers": {
+                "quality": round(quality_mult, 2),
+                "hour": round(hour_mult, 2),
+                "day": round(day_mult, 2),
+                "content": round(content_mult, 2),
+                "tweetcred": round(cred_mult, 2),
+                "viral": round(viral_mult, 2),
+                "foryou_boost": round(foryou_boost, 2),
+                "total": round(total_mult * foryou_boost, 2)
+            },
+
+            # Zamanlama analizi
+            "timing": {
+                "posting_hour": posting_hour,
+                "posting_day": posting_day,
+                "quality": timing_quality,
+                "score": optimal_score,
+                "best_hours": [{"hour": h, "multiplier": m} for h, m in best_hours]
+            },
+
+            # Reach aralığı (min-max tahmini)
+            "reach_range": {
+                "pessimistic": int(impressions * 0.5),
+                "expected": impressions,
+                "optimistic": int(impressions * 2.0),
+                "viral_potential": int(impressions * 5.0) if viral_mult > 1 else None
+            },
+
+            # Hesap bilgisi
+            "account": {
+                "tier": profile.engagement_tier,
+                "tweetcred_estimate": tweetcred_score,
+                "organic_reach_rate": f"{base_organic_rate*100:.1f}%"
+            }
+        }
+
+    def get_optimal_posting_times(self, timezone: str = "TR") -> Dict[str, any]:
+        """
+        Optimal tweet atma zamanlarini dondurur.
+
+        Args:
+            timezone: Saat dilimi (TR = Turkiye UTC+3)
+
+        Returns:
+            Optimal zamanlar ve onerileri
+        """
+        from datetime import datetime
+
+        now = datetime.now()
+        current_hour = now.hour
+        current_day = now.weekday()
+
+        # En iyi saatler
+        sorted_hours = sorted(
+            HOURLY_ENGAGEMENT_MULTIPLIERS.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        top_hours = sorted_hours[:5]  # En iyi 5 saat
+        worst_hours = sorted_hours[-5:]  # En kotu 5 saat
+
+        # En iyi gunler
+        sorted_days = sorted(
+            DAILY_ENGAGEMENT_MULTIPLIERS.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        day_names = ["Pazartesi", "Sali", "Carsamba", "Persembe", "Cuma", "Cumartesi", "Pazar"]
+
+        # Simdi icin skor
+        current_score = (
+            HOURLY_ENGAGEMENT_MULTIPLIERS.get(current_hour, 1.0) *
+            DAILY_ENGAGEMENT_MULTIPLIERS.get(current_day, 1.0)
+        )
+
+        # Bugunun kalan saatleri icin en iyi zaman
+        best_remaining_hour = None
+        best_remaining_mult = 0
+        for hour in range(current_hour + 1, 24):
+            mult = HOURLY_ENGAGEMENT_MULTIPLIERS.get(hour, 1.0)
+            if mult > best_remaining_mult:
+                best_remaining_mult = mult
+                best_remaining_hour = hour
+
+        # Oneri olustur
+        if current_score >= 1.3:
+            recommendation = "Simdi mukemmel bir zaman! Hemen tweetle."
+        elif current_score >= 1.0:
+            recommendation = "Simdi iyi bir zaman. Tweetleyebilirsin."
+        elif best_remaining_hour:
+            recommendation = f"Bekle! Bugun saat {best_remaining_hour:02d}:00'da daha iyi (x{best_remaining_mult:.1f})."
+        else:
+            recommendation = "Yarin sabah 09:00-12:00 arasi daha iyi olur."
+
+        return {
+            "current": {
+                "hour": current_hour,
+                "day": day_names[current_day],
+                "score": round(current_score * 50, 0),  # 0-100 arasi
+                "multiplier": round(current_score, 2)
+            },
+            "recommendation": recommendation,
+            "best_hours": [
+                {
+                    "hour": h,
+                    "time": f"{h:02d}:00",
+                    "multiplier": round(m, 2),
+                    "label": "Prime Time" if m >= 1.3 else "Iyi" if m >= 1.0 else "Normal"
+                }
+                for h, m in top_hours
+            ],
+            "worst_hours": [
+                {
+                    "hour": h,
+                    "time": f"{h:02d}:00",
+                    "multiplier": round(m, 2)
+                }
+                for h, m in worst_hours
+            ],
+            "best_days": [
+                {
+                    "day": d,
+                    "name": day_names[d],
+                    "multiplier": round(m, 2)
+                }
+                for d, m in sorted_days[:3]
+            ],
+            "optimal_slots": OPTIMAL_POSTING_HOURS_TR,
+            "today_remaining_best": {
+                "hour": best_remaining_hour,
+                "time": f"{best_remaining_hour:02d}:00" if best_remaining_hour else None,
+                "multiplier": round(best_remaining_mult, 2) if best_remaining_hour else None
+            } if best_remaining_hour else None
         }
 
     def create_manual_profile(

@@ -107,6 +107,9 @@ if "niche" not in st.session_state:
 if "language" not in st.session_state:
     st.session_state.language = saved_config.get("language", "tr")
 
+# Profil analizci (sidebar'da kullanilacak)
+profile_analyzer = XProfileAnalyzer()
+
 # Sidebar - Ayarlar
 with st.sidebar:
     st.header("⚙️ Ayarlar")
@@ -231,6 +234,35 @@ with st.sidebar:
 
     st.markdown("---")
 
+    # Optimal zamanlama paneli
+    st.subheader("⏰ Tweet Zamanlama")
+
+    # ProfileAnalyzer ile optimal zamanları al
+    optimal_times = profile_analyzer.get_optimal_posting_times()
+
+    # Şu anki zaman skoru
+    current = optimal_times["current"]
+    if current["score"] >= 65:
+        st.success(f"Simdi: {current['hour']:02d}:00 ({current['day']}) - IDEAL!")
+    elif current["score"] >= 45:
+        st.warning(f"Simdi: {current['hour']:02d}:00 ({current['day']}) - Iyi")
+    else:
+        st.error(f"Simdi: {current['hour']:02d}:00 ({current['day']}) - Bekle!")
+
+    st.caption(optimal_times["recommendation"])
+
+    # En iyi saatler
+    with st.expander("En Iyi Saatler"):
+        for slot in optimal_times["best_hours"][:3]:
+            st.write(f"{slot['time']} - x{slot['multiplier']} ({slot['label']})")
+
+    # Bugun kalan en iyi saat
+    if optimal_times.get("today_remaining_best"):
+        remaining = optimal_times["today_remaining_best"]
+        st.info(f"Bugun bekle: {remaining['time']} (x{remaining['multiplier']})")
+
+    st.markdown("---")
+
     # Durum göstergeleri
     if st.session_state.anthropic_api_key:
         st.success("✅ AI Aktif")
@@ -298,8 +330,7 @@ generator = XAlgorithmTweetGenerator(
     is_premium=is_premium
 )
 
-# Profile analyzer
-profile_analyzer = XProfileAnalyzer()
+# Manual profil olustur (sidebar'da tanimlanan profile_analyzer'i kullan)
 manual_profile = profile_analyzer.create_manual_profile(
     username="user",
     followers=followers,
@@ -530,13 +561,55 @@ with tab2:
 
                 st.markdown("---")
 
-                # Reach tahmini
-                reach = profile_analyzer.calculate_reach_prediction(manual_profile, score)
+                # Reach tahmini (gelismis)
+                # Content type tespiti
+                content_type = "text_only"
+                if any(word in tweet.lower() for word in ["foto", "gorsel", "image", "pic"]):
+                    content_type = "with_image"
+                elif any(word in tweet.lower() for word in ["video", "izle"]):
+                    content_type = "with_video"
+                elif "?" in tweet and len(tweet) < 100:
+                    content_type = "with_poll"
+
+                reach = profile_analyzer.calculate_reach_prediction(
+                    manual_profile,
+                    score,
+                    content_type=content_type
+                )
+
                 st.subheader("📈 Tahmini Reach")
-                st.metric("Görüntülenme", f"{reach['impressions']:,}")
-                st.metric("Beğeni", f"{reach['likes']:,}")
-                st.metric("Retweet", f"{reach['retweets']:,}")
-                st.metric("Yorum", f"{reach['replies']:,}")
+
+                # Ana metrikler
+                col_r1, col_r2 = st.columns(2)
+                with col_r1:
+                    st.metric("Goruntulenme", f"{reach['impressions']:,}")
+                    st.metric("Begeni", f"{reach['likes']:,}")
+                    st.metric("Retweet", f"{reach['retweets']:,}")
+                with col_r2:
+                    st.metric("Yorum", f"{reach['replies']:,}")
+                    st.metric("Bookmark", f"{reach['bookmarks']:,}")
+                    st.metric("Eng. Rate", f"{reach['engagement_rate']}%")
+
+                # Reach araligi
+                if "reach_range" in reach:
+                    st.caption(f"Aralik: {reach['reach_range']['pessimistic']:,} - {reach['reach_range']['optimistic']:,}")
+
+                # Zamanlama analizi
+                if "timing" in reach:
+                    timing = reach["timing"]
+                    timing_color = "green" if timing["quality"] == "Mukemmel" else "orange" if timing["quality"] == "Iyi" else "red"
+                    st.markdown(f"**Zamanlama:** :{timing_color}[{timing['quality']}] (Skor: {timing['score']}/100)")
+
+                # Multiplier detaylari (acilir panel)
+                if "multipliers" in reach:
+                    with st.expander("Multiplier Detaylari"):
+                        mults = reach["multipliers"]
+                        st.write(f"Kalite: x{mults['quality']}")
+                        st.write(f"Saat: x{mults['hour']}")
+                        st.write(f"Gun: x{mults['day']}")
+                        st.write(f"Icerik: x{mults['content']}")
+                        st.write(f"TweetCred: x{mults['tweetcred']}")
+                        st.write(f"**Toplam: x{mults['total']}**")
 
             with col2:
                 if analysis.strengths:
