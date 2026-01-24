@@ -1,200 +1,184 @@
-# X Algorithm Tweet Generator
+# X Algorithm Tweet Generator v2.0
 
-X (Twitter) algoritmasının For You feed puanlama sistemine dayanan tweet optimizasyon ve oluşturma aracı.
+Modern full-stack X (Twitter) algoritmasına dayalı tweet üretim ve optimizasyon sistemi.
 
-## Algoritma Hakkında
+## 🏗️ Teknik Stack
 
-Bu tool, [X Algorithm](https://github.com/xai-org/x-algorithm) reposundaki bilgilere dayanır. X'in For You algoritması şu faktörleri değerlendirir:
+### Frontend
+- **Next.js 15** - React framework with App Router
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Styling
+- **shadcn/ui** - UI components
+- **Supabase SSR** - Authentication & database
+- **React Query** - Data fetching
+- **Recharts** - Analytics charts
 
-### Pozitif Sinyaller (Engagement Artırır)
-| Eylem | Ağırlık | Açıklama |
-|-------|---------|----------|
-| Follow | +3.0 | Kullanıcının sizi takip etmesi |
-| Quote | +2.5 | Alıntı tweet |
-| Repost | +2.0 | Retweet |
-| Share | +1.8 | Paylaşım |
-| Reply | +1.5 | Yanıt |
-| Favorite | +1.0 | Beğeni |
+### Backend
+- **FastAPI** - Python API framework
+- **Pydantic** - Data validation
+- **Anthropic Claude** - AI tweet generation
+- **Supabase** - Database & Auth
+- **APScheduler** - Scheduled tasks
 
-### Negatif Sinyaller (Engagement Düşürür)
-| Eylem | Ağırlık | Açıklama |
-|-------|---------|----------|
-| Report | -10.0 | Şikayet |
-| Block | -5.0 | Engelleme |
-| Mute | -3.0 | Sessize alma |
-| Not Interested | -2.0 | İlgilenmiyorum |
+### Database
+- **Supabase PostgreSQL** - Managed database with RLS
 
-## Kurulum
+## 📁 Proje Yapısı
+
+```
+x-tweet-generator/
+├── apps/
+│   ├── web/                    # Next.js Frontend
+│   │   ├── src/
+│   │   │   ├── app/            # App Router pages
+│   │   │   ├── components/     # React components
+│   │   │   ├── lib/            # Utilities & API client
+│   │   │   └── hooks/          # React hooks
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   ├── api/                    # FastAPI Backend
+│   │   ├── app/
+│   │   │   ├── api/v1/         # API endpoints
+│   │   │   ├── core/           # Config & deps
+│   │   │   ├── models/         # Pydantic models
+│   │   │   ├── services/       # Business logic
+│   │   │   └── main.py
+│   │   └── requirements.txt
+│   └── database/               # Supabase migrations
+│       └── migrations/
+├── package.json                # Root package.json
+├── turbo.json                  # Turborepo config
+└── .env.example                # Environment template
+```
+
+## 🚀 Kurulum
+
+### 1. Gereksinimler
+
+- Node.js 18+
+- Python 3.11+
+- Supabase hesabı
+- Anthropic API key
+
+### 2. Supabase Projesi Oluştur
+
+1. [supabase.com](https://supabase.com) adresinde proje oluşturun
+2. SQL Editor'da `apps/database/migrations/001_initial_schema.sql` dosyasını çalıştırın
+3. Project Settings > API'den URL ve key'leri alın
+
+### 3. Environment Variables
+
+`.env` dosyası oluşturun:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/x-tweet-generator.git
-cd x-tweet-generator
+cp .env.example .env
+```
+
+`.env` dosyasını doldurun:
+```env
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_URL=your-supabase-url
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+ANTHROPIC_API_KEY=your-anthropic-api-key
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+### 4. Kurulum
+
+```bash
+# Root dependencies
+npm install
+
+# Frontend
+cd apps/web
+npm install
+
+# Backend (Python venv önerilir)
+cd ../api
 pip install -r requirements.txt
 ```
 
-## Kullanım
-
-### 1. Tweet Analizi
-
-Tweet'inizi algoritma perspektifinden analiz edin:
+### 5. Çalıştırma
 
 ```bash
-python tweet_generator.py analyze "Tweet'inizi buraya yazın"
+# Terminal 1 - Frontend
+cd apps/web
+npm run dev
+
+# Terminal 2 - Backend
+cd apps/api
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Örnek:**
-```bash
-python tweet_generator.py analyze "Yapay zeka hakkında düşüncelerim var ama paylaşmaktan çekiniyorum"
-```
+Uygulamalar:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
 
-**Çıktı:**
-```
-📊 TWEET ANALİZİ
-==================================================
+## 📊 Özellikler
 
-🎯 Algoritma Skoru: 72.0/100
+### ✅ Phase 1 (Tamamlandı)
+- Monorepo yapısı
+- Next.js + FastAPI backend
+- Supabase database schema
+- Temel UI bileşenleri
 
-❌ Zayıf Yönler:
-   • Soru içermiyor - reply olasılığı düşük
+### 🔨 Phase 2 (Devam Ediyor)
+- Authentication (Supabase Auth)
+- Tweet Generation (Claude AI)
+- Tweet Analysis (Phoenix Score)
+- Dashboard UI
 
-💡 Öneriler:
-   • 1-3 emoji eklemek görünürlüğü artırabilir
-   • Satır araları eklemek okunabilirliği artırır
-   • Bir call to action ekleyin (örn: 'Ne düşünüyorsunuz?')
-```
+### 🚀 Phase 3 (Planlandı)
+- Tweet Scheduling
+- A/B Testing System
+- Analytics Dashboard
 
-### 2. Şablon Listesi
+## 🔧 API Endpoints
 
-Yüksek engagement şablonlarını görüntüleyin:
+### Tweets
+- `POST /api/v1/tweets/generate` - AI ile tweet üret
+- `POST /api/v1/tweets/analyze` - Tweet analizi
+- `POST /api/v1/tweets/optimize` - Tweet optimize et
+- `POST /api/v1/tweets/rewrite` - Yeniden yaz
 
-```bash
-python tweet_generator.py templates
-```
+### Profiles
+- `GET /api/v1/profiles/me` - Profil bilgisi
+- `POST /api/v1/profiles/analyze-style` - Stil analizi
+- `GET /api/v1/profiles/tweetcred` - TweetCred skoru
+- `GET /api/v1/profiles/monetization` - Para kazanma analizi
 
-### 3. Şablondan Tweet Oluşturma
+### Threads
+- `POST /api/v1/threads/generate` - Thread üret
+- `POST /api/v1/threads/from-tweet` - Tweet'ten thread'e çevir
 
-```bash
-python tweet_generator.py generate thread_hook --vars '{"konu": "Yapay Zeka", "sayi": "5"}'
-```
+### Scheduling
+- `POST /api/v1/scheduling/schedule` - Tweet planla
+- `GET /api/v1/scheduling/upcoming` - Gelecek tweetler
+- `DELETE /api/v1/scheduling/:id` - İptal et
 
-**Çıktı:**
-```
-🐦 OLUŞTURULAN TWEET
-==================================================
+### A/B Testing
+- `POST /api/v1/ab/campaigns` - Kampanya oluştur
+- `GET /api/v1/ab/campaigns` - Kampanyalar
+- `GET /api/v1/ab/campaigns/:id/results` - Sonuçlar
 
-🧵 Yapay Zeka hakkında bilmeniz gereken 5 şey:
+### Analytics
+- `GET /api/v1/analytics/overview` - Genel istatistikler
+- `GET /api/v1/analytics/performance` - Performans grafiği
 
-(Thread)
+## 📝 Lisans
 
-📏 Karakter: 58/280
-```
+MIT License
 
-### 4. Tweet Optimizasyonu
-
-Mevcut tweet'inizi optimize edin:
-
-```bash
-python tweet_generator.py optimize "Bu harika bir ürün https://external-link.com #tag1 #tag2 #tag3 #tag4 #tag5"
-```
-
-### 5. Konu Önerileri
-
-Belirli bir konu için tweet fikirleri alın:
-
-```bash
-python tweet_generator.py suggest "startup" --style professional
-python tweet_generator.py suggest "teknoloji" --style casual
-python tweet_generator.py suggest "iş hayatı" --style provocative
-```
-
-### 6. Paylaşım Zamanları
-
-En iyi paylaşım zamanlarını öğrenin:
-
-```bash
-python tweet_generator.py times
-```
-
-## Şablonlar
-
-| Şablon | Engagement Boost | Açıklama |
-|--------|------------------|----------|
-| `thread_hook` | +35% | Thread başlangıcı |
-| `hot_take` | +40% | Tartışmalı görüş |
-| `story_hook` | +25% | Hikaye formatı |
-| `question_poll` | +30% | Anket tarzı |
-| `value_list` | +20% | Değer listesi |
-| `before_after` | +25% | Dönüşüm hikayesi |
-| `myth_buster` | +30% | Mit kırıcı |
-| `prediction` | +20% | Tahmin tweeti |
-| `controversial_opinion` | +35% | Cesur görüş |
-| `simple_insight` | +15% | Basit içgörü |
-
-## Algoritma İpuçları
-
-### Engagement Artıran Faktörler
-- Soru sormak (reply'ı artırır)
-- Thread formatı kullanmak
-- Satır araları ile okunabilirlik
-- 1-3 emoji kullanımı
-- Call to action eklemek
-- Kişisel deneyim paylaşmak
-
-### Engagement Düşüren Faktörler
-- Dış linkler (X dışına çıkış)
-- 3'ten fazla hashtag
-- Tamamı büyük harf
-- Spam kelimeleri
-- Çok fazla emoji (>5)
-
-### En İyi Paylaşım Zamanları
-- **Hafta içi:** 08:00-09:00, 12:00-13:00, 17:00-18:00, 21:00-22:00
-- **Hafta sonu:** 10:00-11:00, 14:00-15:00, 20:00-21:00
-- **En iyi günler:** Salı, Çarşamba, Perşembe
-
-## Python API Kullanımı
-
-```python
-from tweet_generator import XAlgorithmTweetGenerator
-
-generator = XAlgorithmTweetGenerator()
-
-# Tweet analizi
-analysis = generator.analyze_tweet("Tweet metniniz")
-print(f"Skor: {analysis.score}")
-print(f"Güçlü yönler: {analysis.strengths}")
-print(f"Öneriler: {analysis.suggestions}")
-
-# Şablondan tweet oluşturma
-tweet = generator.generate_from_template("thread_hook", {
-    "konu": "Python",
-    "sayi": "7"
-})
-
-# Tweet optimizasyonu
-optimized = generator.optimize_tweet("Orijinal tweet")
-
-# Konu önerileri
-suggestions = generator.suggest_improvements("AI", style="professional")
-```
-
-## Katkıda Bulunma
+## 🤝 Katkıda Bulunma
 
 1. Fork yapın
-2. Feature branch oluşturun (`git checkout -b feature/amazing-feature`)
-3. Commit edin (`git commit -m 'Add amazing feature'`)
-4. Push edin (`git push origin feature/amazing-feature`)
-5. Pull Request açın
-
-## Lisans
-
-MIT License - Detaylar için [LICENSE](LICENSE) dosyasına bakın.
-
-## Referanslar
-
-- [X Algorithm Repository](https://github.com/xai-org/x-algorithm)
-- X'in resmi algoritma açıklamaları
+2. Feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit (`git commit -m 'Add amazing feature'`)
+4. Push (`git push origin feature/amazing-feature`)
+5. Pull Request
 
 ---
 
-**Not:** Bu tool, X'in açık kaynak algoritma bilgilerine dayanır. Gerçek algoritma ağırlıkları gizlidir ve buradaki değerler tahminîdir.
+**Not:** Bu proje X'in açık kaynak algoritma bilgilerine dayanır. Gerçek algoritma ağırlıkları gizlidir.

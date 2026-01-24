@@ -720,7 +720,7 @@ with tab3:
                         # Detaylı durum göster
                         if "methods_status" in status:
                             for method_status in status["methods_status"]:
-                                if "✓" in method_status:
+                                if "[OK]" in method_status:
                                     st.caption(f"  {method_status}")
                                 else:
                                     st.caption(f"  {method_status}")

@@ -682,12 +682,12 @@ class TweetScraper:
 
     def fetch_tweets_syndication(self, username: str, count: int = 50) -> List[Dict]:
         """
-        Twitter Syndication API üzerinden tweet çek.
-        Bu API herkese açık ve API key gerektirmiyor.
+        Twitter Syndication API uzerinden tweet cek.
+        Bu API herkese acik ve API key gerektirmiyor.
         """
         tweets = []
         try:
-            # Twitter'ın embed/syndication endpoint'i
+            # Twitter'in embed/syndication endpoint'i
             url = f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{username}"
 
             headers = {
@@ -698,32 +698,48 @@ class TweetScraper:
                 'Origin': 'https://twitter.com',
             }
 
-            # Requests kütüphanesi varsa onu kullan (daha güvenilir)
+            html = None
+
+            # Requests kutuphanesi varsa onu kullan (daha guvenilir)
             if REQUESTS_AVAILABLE:
                 try:
-                    resp = requests.get(url, headers=headers, timeout=20, verify=False)
+                    print(f"[Syndication] Fetching {url}")
+                    resp = requests.get(url, headers=headers, timeout=30, verify=False)
+                    print(f"[Syndication] Response status: {resp.status_code}, length: {len(resp.text)}")
                     resp.raise_for_status()
                     html = resp.text
                 except Exception as req_err:
-                    print(f"Requests failed: {req_err}, falling back to urllib")
-                    req = urllib.request.Request(url, headers=headers)
-                    with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
-                        html = self._decompress_response(response)
+                    print(f"[Syndication] Requests failed: {req_err}")
+                    # urllib fallback
+                    try:
+                        req = urllib.request.Request(url, headers=headers)
+                        with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
+                            html = self._decompress_response(response)
+                            print(f"[Syndication] urllib fallback success, length: {len(html)}")
+                    except Exception as urllib_err:
+                        print(f"[Syndication] urllib also failed: {urllib_err}")
             else:
                 req = urllib.request.Request(url, headers=headers)
                 with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as response:
                     html = self._decompress_response(response)
+                    print(f"[Syndication] urllib success, length: {len(html)}")
 
-            # JSON data'yı HTML içinden çıkar
-            # Syndication API HTML içinde JSON embed eder
+            if not html:
+                print("[Syndication] No HTML received")
+                return []
+
+            # JSON data'yi HTML icinden cikar
+            # Syndication API HTML icinde JSON embed eder
             json_pattern = r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>'
             json_match = re.search(json_pattern, html, re.DOTALL)
 
             if json_match:
+                print(f"[Syndication] Found __NEXT_DATA__ script tag")
                 try:
                     data = json.loads(json_match.group(1))
                     timeline = data.get('props', {}).get('pageProps', {}).get('timeline', {})
                     entries = timeline.get('entries', [])
+                    print(f"[Syndication] Found {len(entries)} entries in timeline")
 
                     for entry in entries[:count]:
                         content = entry.get('content', {})
@@ -739,8 +755,11 @@ class TweetScraper:
                                     "replies": tweet_data.get('reply_count', 0),
                                     "impressions": tweet_data.get('view_count', 100)
                                 })
-                except json.JSONDecodeError:
-                    pass
+                    print(f"[Syndication] Parsed {len(tweets)} tweets from JSON")
+                except json.JSONDecodeError as je:
+                    print(f"[Syndication] JSON decode error: {je}")
+            else:
+                print(f"[Syndication] No __NEXT_DATA__ found, trying alternative patterns")
 
             # Alternatif: HTML'den direkt parse et
             if not tweets:
