@@ -40,7 +40,7 @@ export function StyleAnalyzer() {
         }
       })
 
-      const response = await fetch("/api/style/analyze-style", {
+      const response = await fetch("/api/profile/analyze-style", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tweets }),
@@ -186,11 +186,11 @@ export function StyleAnalyzer() {
               )}
 
               {/* Style Prompt */}
-              {analysis.style_prompt && (
+              {analysis.style_prompt_addition && (
                 <div>
                   <h3 className="text-sm font-medium mb-2">AI Stil Özeti</h3>
-                  <p className="text-sm bg-muted p-3 rounded-lg">
-                    {analysis.style_prompt}
+                  <p className="text-sm bg-muted p-3 rounded-lg whitespace-pre-line">
+                    {analysis.style_prompt_addition}
                   </p>
                 </div>
               )}

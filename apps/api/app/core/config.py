@@ -26,10 +26,19 @@ class Settings(BaseSettings):
     # Anthropic Claude
     ANTHROPIC_API_KEY: str = ""
 
-    # Security
-    SECRET_KEY: str = "your-secret-key-change-in-production"
+    # Security - SECRET_KEY must be set in environment
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Validate critical security settings
+        if not self.SECRET_KEY or self.SECRET_KEY == "your-secret-key-change-in-production":
+            raise ValueError(
+                "SECRET_KEY must be set in environment variables. "
+                "Generate a secure key with: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
+            )
 
     # Twitter/X (optional)
     TWITTER_BEARER_TOKEN: str = ""

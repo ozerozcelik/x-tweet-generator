@@ -1,52 +1,24 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+// API Client - Next.js API Routes
+// Bu dosya artık backend yerine Next.js API route'larını kullanıyor
 
-export class ApiClient {
-  private baseUrl: string
-  private token: string | null = null
+const API_BASE = "/api"
 
-  constructor(baseUrl: string = API_URL) {
-    this.baseUrl = baseUrl
-    // Load token from localStorage on client side
-    if (typeof window !== "undefined") {
-      this.token = localStorage.getItem("supabase_token")
-    }
-  }
-
-  setToken(token: string) {
-    this.token = token
-    if (typeof window !== "undefined") {
-      localStorage.setItem("supabase_token", token)
-    }
-  }
-
-  clearToken() {
-    this.token = null
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("supabase_token")
-    }
-  }
-
+class ApiClient {
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
-      ...options.headers,
-    }
-
-    if (this.token) {
-      headers["Authorization"] = `Bearer ${this.token}`
-    }
-
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
-      headers,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
     })
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))
-      throw new Error(error.message || "API request failed")
+      throw new Error(error.error || "API request failed")
     }
 
     return response.json()
@@ -63,39 +35,67 @@ export class ApiClient {
     include_emoji?: boolean
     custom_instructions?: string
   }) {
-    return this.request<{ content: string; analysis: any }>("/api/v1/tweets/generate", {
+    return this.request<{ content: string; analysis: any }>("/tweets/generate", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        topic: data.topic,
+        style: data.style,
+        tone: data.tone,
+        length: data.length,
+        language: data.language,
+        include_cta: data.include_cta,
+        include_emoji: data.include_emoji,
+        custom_instructions: data.custom_instructions,
+      }),
     })
   }
 
   async analyzeTweet(tweet: string) {
-    return this.request<any>("/api/v1/tweets/analyze", {
+    return this.request<{ analysis: any }>("/tweets/analyze", {
       method: "POST",
       body: JSON.stringify({ content: tweet }),
     })
   }
 
   async optimizeTweet(tweet: string) {
-    return this.request<{ content: string; analysis: any }>("/api/v1/tweets/optimize", {
-      method: "POST",
-      body: JSON.stringify({ content: tweet }),
-    })
+    // Şimdilik analyze ile aynı, sonra optimize endpoint'i eklenir
+    return this.analyzeTweet(tweet)
   }
 
   async rewriteTweet(tweet: string, style: string) {
-    return this.request<{ content: string; analysis: any }>("/api/v1/tweets/rewrite", {
-      method: "POST",
-      body: JSON.stringify({ content: tweet, style }),
-    })
+    // Mock - sonra gerçek implementasyon
+    return this.analyzeTweet(tweet)
   }
 
   async getTweets() {
-    return this.request<any[]>("/api/v1/tweets")
+    const result = await this.request<{ tweets: any[] }>("/tweets")
+    return result.tweets
   }
 
   async getTweet(id: string) {
-    return this.request<any>(`/api/v1/tweets/${id}`)
+    // Mock
+    return null
+  }
+
+  async saveTweet(data: { content: string; analysis?: any; status?: string }) {
+    return this.request<{ tweet: any }>("/tweets", {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateTweet(id: string, data: any) {
+    return this.request<{ tweet: any }>("/tweets", {
+      method: "PATCH",
+      body: JSON.stringify({ id, ...data }),
+    })
+  }
+
+  async deleteTweet(id: string) {
+    return this.request("/tweets", {
+      method: "DELETE",
+      body: JSON.stringify({ id }),
+    })
   }
 
   // Threads
@@ -105,9 +105,13 @@ export class ApiClient {
     style?: string
     language?: string
   }) {
-    return this.request<{ tweets: string[] }>("/api/v1/threads/generate", {
+    return this.request<{ thread: Array<{ content: string; analysis: any }> }>("/threads/generate", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        topic: data.topic,
+        tweetCount: data.tweet_count,
+        style: data.style,
+      }),
     })
   }
 
@@ -117,20 +121,19 @@ export class ApiClient {
     scheduled_for: string
     analysis?: any
   }) {
-    return this.request<{ id: string }>("/api/v1/scheduling/schedule", {
-      method: "POST",
-      body: JSON.stringify(data),
+    return this.saveTweet({
+      ...data,
+      status: "scheduled"
     })
   }
 
   async getScheduledTweets() {
-    return this.request<any[]>("/api/v1/scheduling/upcoming")
+    const tweets = await this.getTweets()
+    return tweets.filter((t: any) => t.status === "scheduled")
   }
 
   async deleteScheduledTweet(id: string) {
-    return this.request<void>(`/api/v1/scheduling/${id}`, {
-      method: "DELETE",
-    })
+    return this.deleteTweet(id)
   }
 
   // A/B Testing
@@ -138,54 +141,55 @@ export class ApiClient {
     name: string
     variants: string[]
   }) {
-    return this.request<{ id: string }>("/api/v1/ab/campaigns", {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
+    // Mock
+    return { id: crypto.randomUUID() }
   }
 
   async getAbCampaigns() {
-    return this.request<any[]>("/api/v1/ab/campaigns")
+    // Mock
+    return []
   }
 
   async getAbResults(id: string) {
-    return this.request<any>(`/api/v1/ab/campaigns/${id}/results`)
+    // Mock
+    return null
   }
 
   async setAbWinner(campaignId: string, variantId: string) {
-    return this.request<void>(`/api/v1/ab/campaigns/${campaignId}/winner`, {
-      method: "POST",
-      body: JSON.stringify({ variant_id: variantId }),
-    })
+    // Mock
+    return
   }
 
   // Profile
   async getProfile() {
-    return this.request<any>("/api/v1/profiles/me")
+    // Session'dan alınıyor
+    return null
   }
 
   async analyzeStyle(tweets: Array<{ text: string; likes?: number }>) {
-    return this.request<any>("/api/v1/profiles/analyze-style", {
-      method: "POST",
-      body: JSON.stringify({ tweets }),
-    })
+    // Mock
+    return { style: "casual", tone: "friendly" }
   }
 
   async getTweetCred() {
-    return this.request<any>("/api/v1/profiles/tweetcred")
+    // Mock
+    return { score: 50 }
   }
 
   async getMonetization() {
-    return this.request<any>("/api/v1/profiles/monetization")
+    // Mock
+    return { potential: 0 }
   }
 
   // Analytics
   async getAnalytics() {
-    return this.request<any>("/api/v1/analytics/overview")
+    // Mock
+    return {}
   }
 
   async getPerformance() {
-    return this.request<any[]>("/api/v1/analytics/performance")
+    // Mock
+    return []
   }
 }
 

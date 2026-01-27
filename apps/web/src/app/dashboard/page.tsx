@@ -1,4 +1,6 @@
-import { createClient } from "@/lib/supabase/server"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
+import { db } from "@/lib/db"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
@@ -9,46 +11,34 @@ import {
   Zap,
   ArrowRight
 } from "lucide-react"
+import type { Tweet, Profile } from "@/types"
 
 export default async function DashboardPage() {
-  const supabase = createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
+  const session = await getServerSession(authOptions)
+  const userId = session?.user?.id
 
   // Get user profile
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user?.id)
-    .single()
+  const profile = userId ? await db.getProfile(userId) : null
 
   // Get recent tweets
-  const { data: tweets } = await supabase
-    .from("tweets")
-    .select("*")
-    .eq("user_id", user?.id)
-    .order("created_at", { ascending: false })
-    .limit(5)
+  const tweets = userId ? await db.getTweetsByUserId(userId, 5) : []
 
   // Get analytics
-  const { data: allTweets } = await supabase
-    .from("tweets")
-    .select("*")
-    .eq("user_id", user?.id)
+  const allTweets = userId ? await db.getTweetsByUserId(userId, 1000) : []
 
   const totalTweets = allTweets?.length || 0
-  const draftCount = allTweets?.filter((t: any) => t.status === "draft").length || 0
-  const scheduledCount = allTweets?.filter((t: any) => t.status === "scheduled").length || 0
+  const draftCount = allTweets?.filter((t: Tweet) => t.status === "draft").length || 0
+  const scheduledCount = allTweets?.filter((t: Tweet) => t.status === "scheduled").length || 0
 
   // Calculate average score
   const scores = allTweets
-    ?.map((t: any) => t.analysis?.score)
-    .filter((s: any) => s !== undefined && s !== null) || []
+    ?.map((t: Tweet) => (t.analysis as TweetAnalysis)?.score)
+    .filter((s: number | undefined) => s !== undefined && s !== null) || []
   const avgScore = scores.length > 0
     ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length)
     : 0
 
-  const followers = profile?.followers || 0
+  const followers = (profile as Profile)?.followers || 0
 
   return (
     <div className="space-y-8">
@@ -57,7 +47,7 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">
-            Hoş geldiniz, {user?.user_metadata?.name || user?.email}
+            Hoş geldiniz, {session?.user?.name || session?.user?.email}
           </p>
         </div>
         <Link href="/dashboard/generate">
@@ -198,7 +188,7 @@ export default async function DashboardPage() {
         <CardContent>
           {tweets && tweets.length > 0 ? (
             <div className="space-y-4">
-              {tweets.slice(0, 5).map((tweet: any) => (
+              {tweets.slice(0, 5).map((tweet: Tweet) => (
                 <div
                   key={tweet.id}
                   className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"
@@ -206,10 +196,10 @@ export default async function DashboardPage() {
                   <div className="flex items-center justify-between mb-2">
                     <span className={`text-xs px-2 py-1 rounded-full ${
                       tweet.status === "draft"
-                        ? "bg-gray-100 text-gray-700"
+                        ? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
                         : tweet.status === "scheduled"
-                        ? "bg-blue-100 text-blue-700"
-                        : "bg-green-100 text-green-700"
+                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+                        : "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
                     }`}>
                       {tweet.status === "draft" ? "Taslak" :
                        tweet.status === "scheduled" ? "Planlandı" : "Paylaşıldı"}

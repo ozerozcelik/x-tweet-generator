@@ -41,15 +41,15 @@ export function ThreadGenerator() {
     setThreads([])
 
     try {
-      const params = new URLSearchParams({
-        topic: topic.trim(),
-        tweet_count: tweetCount.toString(),
-        style,
-        language,
-      })
-
-      const response = await fetch(`/api/threads/generate?${params}`, {
+      const response = await fetch("/api/threads/generate", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: topic.trim(),
+          tweet_count: tweetCount,
+          style,
+          language,
+        }),
       })
 
       if (!response.ok) {

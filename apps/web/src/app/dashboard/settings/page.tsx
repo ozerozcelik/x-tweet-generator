@@ -1,4 +1,7 @@
-import { createClient } from "@/lib/supabase/server"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
+import { db } from "@/lib/db"
+import { redirect } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,52 +11,47 @@ import { Settings, Save } from "lucide-react"
 async function updateProfile(formData: FormData) {
   "use server"
 
-  const supabase = createClient()
+  const session = await getServerSession(authOptions)
 
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
+  if (!session?.user?.id) {
     return { error: "Not authenticated" }
   }
 
-  const profileData = {
-    x_username: formData.get("x_username") || null,
-    followers: parseInt(formData.get("followers") as string) || 0,
-    verified: formData.get("verified") === "on",
-    following: parseInt(formData.get("following") as string) || 0,
-    total_posts: parseInt(formData.get("total_posts") as string) || 0,
-    avg_like_rate: (parseFloat(formData.get("avg_like_rate") as string) || 1) / 100,
-  }
+  const profileData: any = {}
+  const xUsername = formData.get("x_username")
+  if (xUsername) profileData.x_username = xUsername
 
-  const { error } = await supabase
-    .from("profiles")
-    .update(profileData)
-    .eq("id", user.id)
+  const followers = formData.get("followers")
+  if (followers) profileData.followers = parseInt(followers as string) || 0
 
-  if (error) {
-    return { error: error.message }
-  }
+  const following = formData.get("following")
+  if (following) profileData.following = parseInt(following as string) || 0
 
-  return { success: true }
+  const totalPosts = formData.get("total_posts")
+  if (totalPosts) profileData.total_posts = parseInt(totalPosts as string) || 0
+
+  const avgLikeRate = formData.get("avg_like_rate")
+  if (avgLikeRate) profileData.avg_like_rate = (parseFloat(avgLikeRate as string) || 1) / 100
+
+  profileData.verified = formData.get("verified") === "on"
+
+  await db.updateProfile(session.user.id, profileData)
+
+  redirect("/dashboard/settings")
 }
 
 export default async function SettingsPage() {
-  const supabase = createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
+  const session = await getServerSession(authOptions)
+  const userId = session?.user?.id
 
   // Get profile
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user?.id)
-    .single()
+  const profile = userId ? await db.getProfile(userId) : null
 
-  const followers = profile?.followers || 0
-  const following = profile?.following || 0
-  const verified = profile?.verified || false
-  const totalPosts = profile?.total_posts || 0
-  const avgLikeRate = (profile?.avg_like_rate || 0.01) * 100
+  const followers = (profile as any)?.followers || 0
+  const following = (profile as any)?.following || 0
+  const verified = (profile as any)?.verified || false
+  const totalPosts = (profile as any)?.total_posts || 0
+  const avgLikeRate = ((profile as any)?.avg_like_rate || 0.01) * 100
 
   return (
     <div className="space-y-6">
@@ -84,7 +82,7 @@ export default async function SettingsPage() {
                   id="x_username"
                   name="x_username"
                   placeholder="elonmusk (@ olmadan)"
-                  defaultValue={profile?.x_username || ""}
+                  defaultValue={(profile as any)?.x_username || ""}
                 />
               </div>
 
@@ -171,17 +169,11 @@ export default async function SettingsPage() {
         <CardContent className="space-y-2">
           <div className="flex justify-between">
             <span className="text-sm text-muted-foreground">E-posta</span>
-            <span className="text-sm font-medium">{user?.email}</span>
+            <span className="text-sm font-medium">{session?.user?.email}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-sm text-muted-foreground">ID</span>
-            <span className="text-sm font-medium">{user?.id?.slice(0, 8)}...</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-sm text-muted-foreground">Kayıt Tarihi</span>
-            <span className="text-sm font-medium">
-              {user?.created_at ? new Date(user.created_at).toLocaleDateString("tr-TR") : "-"}
-            </span>
+            <span className="text-sm font-medium">{session?.user?.id?.slice(0, 8)}...</span>
           </div>
         </CardContent>
       </Card>

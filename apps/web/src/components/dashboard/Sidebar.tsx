@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useSupabase } from "@/components/providers/SupabaseProvider"
+import { signOut } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
@@ -20,7 +20,6 @@ import {
   MessageSquare,
   Palette,
 } from "lucide-react"
-import { User } from "@supabase/supabase-js"
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: Home },
@@ -34,14 +33,12 @@ const navigation = [
   { name: "Ayarlar", href: "/dashboard/settings", icon: Settings },
 ]
 
-export function Sidebar({ user }: { user: User }) {
+export function Sidebar({ user }: { user: { email?: string; name?: string; id?: string } }) {
   const pathname = usePathname()
-  const { signOut } = useSupabase()
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const handleSignOut = async () => {
-    await signOut()
-    window.location.href = "/auth/login"
+    await signOut({ callbackUrl: "/auth/login" })
   }
 
   return (
@@ -83,12 +80,12 @@ export function Sidebar({ user }: { user: User }) {
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                 <span className="font-semibold text-primary">
-                  {user?.email?.[0].toUpperCase()}
+                  {user?.email?.[0].toUpperCase() || "?"}
                 </span>
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
-                  {user?.user_metadata?.name || "Kullanıcı"}
+                  {user?.name || "Kullanıcı"}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
                   {user?.email}

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
 import { Sidebar } from "@/components/dashboard/Sidebar"
 
 export default async function DashboardLayout({
@@ -7,17 +8,15 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supabase = createClient()
+  const session = await getServerSession(authOptions)
 
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
+  if (!session?.user) {
     redirect("/auth/login")
   }
 
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar user={user} />
+      <Sidebar user={session.user} />
       <main className="lg:pl-64">
         <div className="p-6">
           {children}

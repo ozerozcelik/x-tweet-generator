@@ -85,9 +85,14 @@ export function TweetAnalyzer() {
             />
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{content.length} karakter</span>
-              {content.length > 280 && (
+              {content.length > 280 && content.length <= 25000 && (
+                <span className="text-yellow-500">
+                  Premium limit (25.000)
+                </span>
+              )}
+              {content.length > 25000 && (
                 <span className="text-red-500">
-                  Standard limit aşıldı (280)
+                  Maksimum limit aşıldı (25.000)
                 </span>
               )}
             </div>

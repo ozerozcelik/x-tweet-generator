@@ -1,18 +1,15 @@
-import { createClient } from "@/lib/supabase/server"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
+import { db } from "@/lib/db"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { BarChart3, TrendingUp, FileText, Star } from "lucide-react"
 
 export default async function AnalyticsPage() {
-  const supabase = createClient()
-
-  const { data: { user } } = await supabase.auth.getUser()
+  const session = await getServerSession(authOptions)
+  const userId = session?.user?.id
 
   // Get all tweets
-  const { data: tweets } = await supabase
-    .from("tweets")
-    .select("*")
-    .eq("user_id", user?.id)
-    .order("created_at", { ascending: false })
+  const tweets = userId ? await db.getTweetsByUserId(userId, 1000) : []
 
   // Calculate stats
   const totalTweets = tweets?.length || 0
